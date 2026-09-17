@@ -13,14 +13,15 @@ export type CommonParameters = {
   trueThickness: number | null
   oreDensity: number | null
   wasteDensity: number | null
+  blockLossDilution: LossDilutionIndicator
+  preparationLossDilution: LossDilutionIndicator
   cuttingLossDilution: LossDilutionIndicator
-  stopingLossDilution: LossDilutionIndicator
-  crownSillLossDilution: LossDilutionIndicator
-  barrierLossDilution: LossDilutionIndicator
-  pointPillarLossDilution: LossDilutionIndicator
 }
 
+export type PillarShape = 'rectangular' | 'cylinder' | 'triangular-prism'
+
 export type BlockElementKind =
+  | 'panel'
   | 'barrier-pillar'
   | 'crown-pillar'
   | 'sill-pillar'
@@ -34,9 +35,14 @@ export type BlockElementInput = {
   id: string
   kind: BlockElementKind
   name: string
-  sectionArea: number | null
+  shape: PillarShape
+  length: number | null
+  width: number | null
   height: number | null
   quantity: number | null
+  wasteVolume?: number | null
+  dilutionRate: number | null
+  lossRate: number | null
 }
 
 export type DevelopmentRowInput = {

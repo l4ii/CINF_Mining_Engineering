@@ -1,3 +1,5 @@
+import type { MiningMethodInput } from './types'
+
 export const PROJECT_STAGES = [
   'overview',
   'parameters',
@@ -55,6 +57,7 @@ export type MethodCandidate = {
   name: string
   methodName: string
   calculated: boolean
+  calculationInput: MiningMethodInput | null
 } & MethodMetrics
 
 export type OreBody = {
@@ -119,10 +122,20 @@ export function withProjectOpened(project: MiningProject, at = Date.now()): Mini
   return { ...project, openedAt: at }
 }
 
+export function normalizeCalculationInput(value: unknown): MiningMethodInput | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as MiningMethodInput
+  if (!Array.isArray(input.blockElements) || !Array.isArray(input.preparation) || !Array.isArray(input.cutting)) {
+    return null
+  }
+  if (!input.common || typeof input.common !== 'object') return null
+  return input
+}
+
 export function createCandidate(
   input: Partial<Omit<MethodCandidate, 'id'>> & { id?: string } = {},
 ): MethodCandidate {
-  const { id, name = '', methodName = '', calculated = false, ...metrics } = input
+  const { id, name = '', methodName = '', calculated = false, calculationInput = null, ...metrics } = input
   return {
     id: id ?? makeId('method'),
     name,
@@ -130,6 +143,7 @@ export function createCandidate(
     calculated,
     ...EMPTY_METHOD_METRICS,
     ...metrics,
+    calculationInput: normalizeCalculationInput(calculationInput),
   }
 }
 
@@ -151,7 +165,7 @@ export function createOreBody(
     dipAngle,
     thickness,
     category,
-    candidates,
+    candidates: candidates.map((candidate) => createCandidate(candidate)),
     selectedCandidateId,
   }
 }
@@ -375,6 +389,7 @@ export function normalizeProject(
   }
 }
 
+/** Reloads saved projects. Navigation (stage / inner pages) is never persisted. */
 export function loadProjectStore(): ProjectStoreSnapshot {
   if (typeof localStorage === 'undefined') return { projects: [], currentProjectId: null }
   try {

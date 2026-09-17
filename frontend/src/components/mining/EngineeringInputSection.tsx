@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { applyDevelopmentLink, resolvedOreLength, resolvedWasteLength } from '../../mining/developmentLink'
-import type { DevelopmentRowInput, ValidationIssue } from '../../mining/types'
+import type { DevelopmentRowInput, LossDilutionIndicator, ValidationIssue } from '../../mining/types'
 import { ConfirmDialog } from '../shell/AppDialog'
+import LossDilutionFields from './LossDilutionFields'
 
 export type EngineeringSection = 'preparation' | 'cutting'
 type StoredField = keyof Omit<DevelopmentRowInput, 'id' | 'note'>
@@ -10,6 +11,7 @@ type StoredField = keyof Omit<DevelopmentRowInput, 'id' | 'note'>
 export interface EngineeringInputSectionProps {
   section: EngineeringSection
   rows: DevelopmentRowInput[]
+  indicator: LossDilutionIndicator
   issues?: ValidationIssue[]
   collapsed: boolean
   darkMode: boolean
@@ -17,6 +19,7 @@ export interface EngineeringInputSectionProps {
   onRowChange: (rowId: string, field: string, value: string | number | null) => void
   onAddRow: () => void
   onRemoveRow: (rowId: string) => void
+  onIndicatorChange: (field: keyof LossDilutionIndicator, value: number | null) => void
 }
 
 const STORED_FIELDS: StoredField[] = [
@@ -66,6 +69,8 @@ function draftMatchesValue(raw: string | undefined, value: unknown): boolean {
 }
 
 function rowValue(row: DevelopmentRowInput, field: string): unknown {
+  if (field === 'oreTotalLength') return resolvedOreLength(row)
+  if (field === 'wasteTotalLength') return resolvedWasteLength(row)
   return (row as unknown as Record<string, unknown>)[field]
 }
 
@@ -93,6 +98,7 @@ function totalVolumeOf(row: DevelopmentRowInput): number | null {
 export default function EngineeringInputSection({
   section,
   rows,
+  indicator,
   issues = [],
   collapsed,
   darkMode,
@@ -100,6 +106,7 @@ export default function EngineeringInputSection({
   onRowChange,
   onAddRow,
   onRemoveRow,
+  onIndicatorChange,
 }: EngineeringInputSectionProps) {
   const label = SECTION_LABELS[section]
   const locallyEdited = useRef(new Set<string>())
@@ -142,6 +149,9 @@ export default function EngineeringInputSection({
   const unitSurface = darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-50 text-gray-500'
   const inputSurface = darkMode ? 'border-gray-600 bg-gray-900 text-gray-100' : 'border-gray-300 bg-white text-gray-900'
   const border = darkMode ? 'border-gray-700' : 'border-gray-200'
+  const oreSurface = darkMode ? 'bg-emerald-950/40' : 'bg-emerald-50/80'
+  const rockSurface = darkMode ? 'bg-amber-950/30' : 'bg-amber-50/80'
+  const sharedSurface = darkMode ? 'bg-gray-900' : 'bg-white'
 
   const handleStoredChange = (rowId: string, field: StoredField, numeric: boolean, raw: string) => {
     const draftKey = `${rowId}.${field}`
@@ -217,17 +227,22 @@ export default function EngineeringInputSection({
         >
           {collapsed ? <ChevronRight className="h-4 w-4 shrink-0" aria-hidden /> : <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />}
           <span className="font-semibold">{label}</span>
-          <span className={`min-w-0 flex-1 truncate text-sm ${muted}`}>
-            {rows.length} 条 · 总长可单独填写；再填数目或单长即可反算
-          </span>
         </button>
+        <LossDilutionFields
+          labelPrefix={label}
+          indicator={indicator}
+          fieldPrefix={`${section}LossDilution`}
+          issues={issues}
+          darkMode={darkMode}
+          onChange={onIndicatorChange}
+        />
       </div>
 
       {!collapsed ? (
         <div id={`engineering-content-${section}`} className="border-t border-inherit px-3 pb-3 pt-3">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <p className={`min-w-0 flex-1 text-sm leading-6 ${muted}`}>
-              矿石中、岩石中按巷道长度 → 断面 → 体积填写。总长可单独作为计算依据；再填巷道数目或单长时自动推算其余项。地质储量等按密度写入下方工程计算表。
+              矿石中计入储量，岩石中计入废石；两者相加为总体积。总长可直接填写，也可由巷道数目 × 单长联动计算。
             </p>
             <button
               type="button"
@@ -259,7 +274,8 @@ export default function EngineeringInputSection({
                   >
                     <X className="h-3.5 w-3.5" aria-hidden />
                   </button>
-                  <table className="w-full table-fixed border-collapse text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
                     <colgroup>
                       <col className="w-[6%]" />
                       <col className="w-[15%]" />
@@ -281,7 +297,7 @@ export default function EngineeringInputSection({
                         <th className={`border ${border} px-1.5 py-1 text-center font-semibold`}>总长</th>
                         <th className={`border ${border} px-1.5 py-1 text-center font-semibold`}>断面</th>
                         <th className={`border ${border} px-1.5 py-1 text-center font-semibold`}>体积</th>
-                        <th className={`border ${border} px-1.5 py-1 pr-7 text-center font-semibold`}>总体积</th>
+                        <th className={`border ${border} px-1.5 py-1 text-center font-semibold`}>总体积</th>
                       </tr>
                       <tr className={unitSurface}>
                         <th className={`border ${border} px-1 py-0.5 text-center text-xs font-normal`} />
@@ -296,11 +312,11 @@ export default function EngineeringInputSection({
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td rowSpan={2} className={`border ${border} px-1.5 py-1 text-center align-middle text-base font-semibold tabular-nums`} data-testid={`${section}-${row.id}-index`}>
+                      <tr className={oreSurface}>
+                        <td rowSpan={2} className={`border ${border} ${sharedSurface} px-1.5 py-1 text-center align-middle text-base font-semibold tabular-nums`} data-testid={`${section}-${row.id}-index`}>
                           {index + 1}
                         </td>
-                        <td rowSpan={2} className={`border ${border} px-1.5 py-1 text-center align-middle`}>
+                        <td rowSpan={2} className={`border ${border} ${sharedSurface} px-1.5 py-1 text-center align-middle`}>
                           <div className="flex flex-col items-center justify-center">
                             <input
                               type="text"
@@ -327,7 +343,7 @@ export default function EngineeringInputSection({
                           </div>
                         </td>
                         <td className={`border ${border} px-1.5 py-1 text-center font-medium`}>矿石中</td>
-                        <td rowSpan={2} className={`border ${border} px-1 py-1 align-middle`}>
+                        <td rowSpan={2} className={`border ${border} ${sharedSurface} px-1 py-1 align-middle`}>
                           {cellInput(row, 'quantity', { numeric: true, aria: `${label}-巷道数目-${row.id}` })}
                         </td>
                         <td className={`border ${border} px-1 py-1`}>
@@ -342,11 +358,11 @@ export default function EngineeringInputSection({
                         <td className={`border ${border} px-1 py-1`}>
                           {readCell(oreVolumeOf(row), `${section}-${row.id}-oreVolume`, `${label}-矿石中体积-${row.id}`)}
                         </td>
-                        <td rowSpan={2} className={`border ${border} px-1.5 py-1 align-middle`}>
+                        <td rowSpan={2} className={`border ${border} ${sharedSurface} px-1.5 py-1 align-middle`}>
                           {readCell(totalVolumeOf(row), `${section}-${row.id}-totalVolume`, `${label}-总体积-${row.id}`)}
                         </td>
                       </tr>
-                      <tr>
+                      <tr className={rockSurface}>
                         <td className={`border ${border} px-1.5 py-1 text-center font-medium`}>岩石中</td>
                         <td className={`border ${border} px-1 py-1`}>
                           {cellInput(row, 'wasteSingleLength', { numeric: true, aria: `${label}-岩石中单长-${row.id}` })}
@@ -363,6 +379,7 @@ export default function EngineeringInputSection({
                       </tr>
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )
             })}

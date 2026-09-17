@@ -6,5 +6,6 @@ import { PROJECT_STORE_KEY } from '../mining/project'
 afterEach(() => {
   sessionStorage.removeItem(ASSISTANT_DISMISSED_KEY)
   localStorage.removeItem(PROJECT_STORE_KEY)
+  delete window.electronAPI
 })
 

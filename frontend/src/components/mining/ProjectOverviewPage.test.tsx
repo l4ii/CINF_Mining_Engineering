@@ -36,20 +36,20 @@ describe('project overview list', () => {
     expect(screen.getByRole('button', { name: '导入项目' })).toBeInTheDocument()
     expect(screen.getByTestId('project-case-dropzone')).toHaveTextContent('将案例文件拖入此处即可导入')
     expect(screen.getByTestId('project-list')).toHaveClass('text-base', 'table-fixed', 'text-center')
-    expect(screen.getByRole('button', { name: '选定项目 矿1' })).toHaveClass('underline')
+    expect(screen.getByRole('button', { name: '进入项目 矿1' })).toHaveClass('underline')
     expect(screen.getByRole('button', { name: '编辑项目 矿1' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选定项目 矿6' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '选定项目 矿7' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '选定项目 矿11' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '进入项目 矿6' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '进入项目 矿7' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '进入项目 矿11' })).not.toBeInTheDocument()
     expect(screen.getByTestId('project-list-pagination')).toHaveTextContent('共 11 条')
     expect(screen.getByTestId('project-list-pagination')).toHaveTextContent('第 1 / 2 页')
 
     fireEvent.click(screen.getByRole('button', { name: '下一页' }))
-    expect(screen.getByRole('button', { name: '选定项目 矿11' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '选定项目 矿1' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '进入项目 矿11' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '进入项目 矿1' })).not.toBeInTheDocument()
     expect(screen.getByTestId('project-list-pagination')).toHaveTextContent('第 2 / 2 页')
 
-    fireEvent.click(screen.getByRole('button', { name: '选定项目 矿11' }))
+    fireEvent.click(screen.getByRole('row', { name: /矿11/ }))
     expect(screen.getByRole('row', { name: /矿11/ })).toHaveAttribute('aria-current', 'true')
   })
 
@@ -63,7 +63,7 @@ describe('project overview list', () => {
     await waitFor(() => {
       expect(screen.getByTestId('project-case-message')).toHaveTextContent('已导入项目：导入矿')
     })
-    expect(screen.getByRole('button', { name: '选定项目 导入矿' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '进入项目 导入矿' })).toBeInTheDocument()
     expect(screen.getByRole('row', { name: /导入矿/ })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByTestId('project-list-pagination')).toHaveTextContent('共 2 条')
   })
@@ -76,7 +76,7 @@ describe('project overview list', () => {
       dataTransfer: { files: [new File(['{}'], 'notes.txt')], types: ['Files'] },
     })
     expect(screen.getByTestId('project-case-message')).toHaveTextContent('.cinfmine')
-    expect(screen.queryByRole('button', { name: '选定项目 拖入矿' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '进入项目 拖入矿' })).not.toBeInTheDocument()
 
     fireEvent.drop(dropzone, {
       dataTransfer: { files: [createCaseFile('拖入矿')], types: ['Files'] },

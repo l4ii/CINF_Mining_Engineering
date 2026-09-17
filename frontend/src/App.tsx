@@ -5,6 +5,7 @@ import MainContent from './components/MainContent'
 import LicenseActivation from './components/LicenseActivation'
 import AssistantPanel from './components/AssistantPanel'
 import ElectronAppTitleBar from './components/shell/ElectronAppTitleBar'
+import SaveFeedback from './components/shell/SaveFeedback'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AssistantProvider } from './context/AssistantContext'
 import { ProjectProvider, useProject } from './context/ProjectContext'
@@ -96,7 +97,7 @@ function LicensedApp({
   setDarkMode: (value: boolean) => void
   setLanguage: (value: 'zh' | 'en') => void
 }) {
-  const { project, stage, selectStage } = useProject()
+  const { project, stage, selectStage, returnToHome, activeOreBodyId, activeCandidateId } = useProject()
   const [currentView, setCurrentView] = useState<'module' | 'about' | 'settings'>('module')
   const [aboutDepartment, setAboutDepartment] = useState<string | null>(null)
   const [aboutVisit, setAboutVisit] = useState(0)
@@ -126,6 +127,25 @@ function LicensedApp({
     setAboutDepartment(null)
   }
 
+  useEffect(() => {
+    const goHome = () => {
+      returnToHome()
+      setCurrentView('module')
+      setAboutDepartment(null)
+      setMobileNavOpen(false)
+    }
+    const onPageShow = (event: Event) => {
+      if (!(event as PageTransitionEvent).persisted) return
+      goHome()
+    }
+    window.addEventListener('pageshow', onPageShow)
+    const unsubscribe = getElectronApi()?.onResetHome?.(goHome)
+    return () => {
+      window.removeEventListener('pageshow', onPageShow)
+      unsubscribe?.()
+    }
+  }, [returnToHome])
+
   const sidebar = (
     <Sidebar
       darkMode={darkMode}
@@ -154,9 +174,10 @@ function LicensedApp({
         : PROJECT_STAGE_LABELS[stage][language]
 
   return (
-    <AssistantProvider>
+    <AssistantProvider pageKey={`${currentView}:${aboutDepartment ?? ''}:${stage}:${activeOreBodyId ?? ''}:${activeCandidateId ?? ''}`}>
       <div className={`relative flex h-screen flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
         <ElectronAppTitleBar darkMode={darkMode} language={language} />
+        <SaveFeedback darkMode={darkMode} language={language} />
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <div className="hidden h-full md:block">{sidebar}</div>
           {mobileNavOpen ? (

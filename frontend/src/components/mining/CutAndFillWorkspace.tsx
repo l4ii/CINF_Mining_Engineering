@@ -1,28 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, FileSpreadsheet, Info, RefreshCw } from "lucide-react";
+import { FileSpreadsheet, Info } from "lucide-react";
+import { calculateCutAndFill, createMethodInput } from "../../mining/cutAndFillCalc";
 import {
-  calculateCutAndFill,
-  createMethodInput,
-  deriveInclinedLength,
-} from "../../mining/cutAndFillCalc";
-import { createBlockElement, hasCutAndFillMethodModule } from "../../mining/methodConfigs";
+  createBlankDevelopmentRow,
+  hasCutAndFillMethodModule,
+  insertPillarElement,
+  isPanelElement,
+  isStopeElement,
+} from "../../mining/methodConfigs";
 import { applyDevelopmentLink } from "../../mining/developmentLink";
 import type {
   CommonParameters,
   CutAndFillResult,
-  DevelopmentRowInput,
+  LossDilutionIndicator,
   MiningMethodInput,
+  PillarShape,
 } from "../../mining/types";
 import { saveCutAndFillWorkbook } from "../../mining/cutAndFillExport";
 import type { SaveFileResult } from "../../utils/saveFile";
 import BackIconButton from "../BackIconButton";
 import { NoticeBanner } from "../shell/AppDialog";
-import ReferenceIndicatorsPanel, {
-  type BlockSizeKey,
-  type IndicatorKey,
+import OreBodyParametersPanel, {
   type OccurrenceParameterKey,
 } from "./CommonParametersPanel";
-import BlockElementsPanel from "./BlockElementsPanel";
+import BlockElementsPanel, { type BlockDimensionField } from "./BlockElementsPanel";
 import EngineeringInputSection, {
   type EngineeringSection,
 } from "./EngineeringInputSection";
@@ -55,25 +56,22 @@ export interface CutAndFillWorkspaceProps {
     input: MiningMethodInput,
     result: CutAndFillResult,
   ) => Promise<SaveFileResult> | SaveFileResult | void;
-  onMetricsChange?: (metrics: CutAndFillResult["metrics"]) => void;
+  savedInput?: MiningMethodInput | null;
+  onMetricsChange?: (metrics: CutAndFillResult["metrics"], input?: MiningMethodInput) => void;
 }
 
 type SectionCollapsedState = Record<EngineeringSection, boolean>;
 
 const SECTION_KEYS: EngineeringSection[] = ["preparation", "cutting"];
 
-function makeInitialSectionState(): SectionCollapsedState {
-  return { preparation: false, cutting: false };
+function textActionClass(darkMode: boolean): string {
+  return `shrink-0 text-base font-medium hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline ${
+    darkMode ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-800"
+  }`;
 }
 
-function withDerivedIncline(input: MiningMethodInput): MiningMethodInput {
-  return {
-    ...input,
-    common: {
-      ...input.common,
-      inclinedLength: deriveInclinedLength(input.common.dipAngle, input.common.levelHeight),
-    },
-  };
+function makeInitialSectionState(): SectionCollapsedState {
+  return { preparation: false, cutting: false };
 }
 
 function applyInheritedCommon(
@@ -93,7 +91,7 @@ function applyInheritedCommon(
     if (dirtyKeys.has(key)) continue;
     if (key in source) common[key] = source[key] ?? null;
   }
-  return withDerivedIncline({ ...input, common });
+  return { ...input, common };
 }
 
 function inheritedValuesEqual(left: MiningMethodInput, right: MiningMethodInput, dirtyKeys: Set<string>): boolean {
@@ -109,23 +107,37 @@ function seedMethodInput(
   return applyInheritedCommon(createMethodInput(methodName), inheritedCommon, thickness, dipAngle, new Set());
 }
 
-function makeRowId(section: EngineeringSection): string {
-  return `${section}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function inheritedDirtyKeys(
+  input: MiningMethodInput,
+  inheritedCommon: InheritedCommon | undefined,
+  thickness: number | null | undefined,
+  dipAngle: number | null | undefined,
+): Set<string> {
+  const source: InheritedCommon = {
+    ...inheritedCommon,
+    ...(thickness != null ? { trueThickness: thickness } : {}),
+    ...(dipAngle != null ? { dipAngle } : {}),
+  };
+  const dirty = new Set<string>();
+  for (const key of INHERITED_COMMON_KEYS) {
+    if (key in source && input.common[key] !== (source[key] ?? null)) dirty.add(key);
+  }
+  return dirty;
 }
 
-function blankDevelopmentRow(section: EngineeringSection): DevelopmentRowInput {
-  return {
-    id: makeRowId(section),
-    name: "",
-    quantity: null,
-    oreSingleLength: null,
-    wasteSingleLength: null,
-    oreTotalLength: null,
-    wasteTotalLength: null,
-    oreSectionArea: null,
-    wasteSectionArea: null,
-    note: "",
-  };
+function seedFromSavedOrTemplate(
+  methodName: string,
+  savedInput: MiningMethodInput | null | undefined,
+  thickness: number | null | undefined,
+  dipAngle: number | null | undefined,
+  inheritedCommon: InheritedCommon | undefined,
+  dirtyKeys: Set<string>,
+): MiningMethodInput {
+  const base = savedInput ?? createMethodInput(methodName);
+  if (savedInput) {
+    for (const key of inheritedDirtyKeys(savedInput, inheritedCommon, thickness, dipAngle)) dirtyKeys.add(key);
+  }
+  return applyInheritedCommon(base, inheritedCommon, thickness, dipAngle, dirtyKeys);
 }
 
 export default function CutAndFillWorkspace({
@@ -140,18 +152,49 @@ export default function CutAndFillWorkspace({
   darkMode = false,
   language = "zh",
   onExport,
+  savedInput,
   onMetricsChange,
 }: CutAndFillWorkspaceProps) {
   const storageKey = workspaceKey || methodName || "method";
   const dirtyInherited = useRef<Record<string, Set<string>>>({});
-  const [inputsByKey, setInputsByKey] = useState<Record<string, MiningMethodInput>>({});
-  const [commonCollapsed, setCommonCollapsed] = useState<Record<string, boolean>>({});
+  const [inputsByKey, setInputsByKey] = useState<Record<string, MiningMethodInput>>(() => {
+    if (!methodName) return {};
+    const dirty = new Set<string>();
+    dirtyInherited.current[storageKey] = dirty;
+    return {
+      [storageKey]: seedFromSavedOrTemplate(methodName, savedInput, thickness, dipAngle, inheritedCommon, dirty),
+    };
+  });
   const [occurrenceCollapsed, setOccurrenceCollapsed] = useState<Record<string, boolean>>({});
   const [blockCollapsed, setBlockCollapsed] = useState<Record<string, boolean>>({});
   const [sectionsCollapsed, setSectionsCollapsed] = useState<Record<string, SectionCollapsedState>>({});
   const [exportState, setExportState] = useState<"idle" | "busy" | "success" | "cancelled" | "error">("idle");
   const [exportMessage, setExportMessage] = useState("");
   const [templateVersion, setTemplateVersion] = useState(0);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [locateInput, setLocateInput] = useState<{ id: string } | null>(null);
+
+  useEffect(() => {
+    if (!locateInput) return;
+    const element = Array.from(workspaceRef.current?.querySelectorAll<HTMLElement>('[data-testid]') ?? [])
+      .find((item) => item.dataset.testid === locateInput.id);
+    if (!element) return;
+    element.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    element.focus({ preventScroll: true });
+    element.classList.add('ring-2', 'ring-amber-500', 'ring-offset-2');
+    return () => element.classList.remove('ring-2', 'ring-amber-500', 'ring-offset-2');
+  }, [locateInput]);
+
+  const handleLocateInput = (id: string) => {
+    if (id.startsWith('common-')) setOccurrenceCollapsed((previous) => ({ ...previous, [storageKey]: false }));
+    if (id.startsWith('block-')) setBlockCollapsed((previous) => ({ ...previous, [storageKey]: false }));
+    for (const section of SECTION_KEYS) {
+      if (id.startsWith(section)) setSectionsCollapsed((previous) => ({
+        ...previous, [storageKey]: { ...(previous[storageKey] ?? makeInitialSectionState()), [section]: false },
+      }));
+    }
+    setLocateInput({ id });
+  };
 
   if (!dirtyInherited.current[storageKey]) dirtyInherited.current[storageKey] = new Set();
 
@@ -159,20 +202,25 @@ export default function CutAndFillWorkspace({
     if (!methodName) return;
     setInputsByKey((previous) => {
       const current = previous[storageKey];
+      if (!current) {
+        const dirty = new Set<string>();
+        dirtyInherited.current[storageKey] = dirty;
+        return {
+          ...previous,
+          [storageKey]: seedFromSavedOrTemplate(methodName, savedInput, thickness, dipAngle, inheritedCommon, dirty),
+        };
+      }
       const dirty = dirtyInherited.current[storageKey] ?? new Set();
-      const next = current
-        ? applyInheritedCommon(current, inheritedCommon, thickness, dipAngle, dirty)
-        : seedMethodInput(methodName, thickness, dipAngle, inheritedCommon);
-      if (current && inheritedValuesEqual(current, next, dirty)) return previous;
+      const next = applyInheritedCommon(current, inheritedCommon, thickness, dipAngle, dirty);
+      if (inheritedValuesEqual(current, next, dirty)) return previous;
       return { ...previous, [storageKey]: next };
     });
-    setCommonCollapsed((previous) => storageKey in previous ? previous : { ...previous, [storageKey]: false });
     setOccurrenceCollapsed((previous) => storageKey in previous ? previous : { ...previous, [storageKey]: true });
     setBlockCollapsed((previous) => storageKey in previous ? previous : { ...previous, [storageKey]: false });
     setSectionsCollapsed((previous) =>
       storageKey in previous ? previous : { ...previous, [storageKey]: makeInitialSectionState() },
     );
-  }, [storageKey, methodName, thickness, dipAngle, inheritedCommon]);
+  }, [storageKey, methodName, thickness, dipAngle, inheritedCommon, savedInput]);
 
   const activeInput = methodName
     ? (inputsByKey[storageKey] ?? seedMethodInput(methodName, thickness, dipAngle, inheritedCommon))
@@ -182,15 +230,12 @@ export default function CutAndFillWorkspace({
     [activeInput],
   );
   const sectionState = sectionsCollapsed[storageKey] ?? makeInitialSectionState();
-  const hasRows = Boolean(
-    activeInput && SECTION_KEYS.some((section) => activeInput[section].length > 0),
-  );
   const hasMethodModule = hasCutAndFillMethodModule(methodName);
   const appTitle = language === "en" ? "Mining engineering calculation" : "采矿工程计算";
 
   useEffect(() => {
-    if (result && onMetricsChange) onMetricsChange(result.metrics);
-  }, [result, onMetricsChange]);
+    if (result && activeInput && onMetricsChange) onMetricsChange(result.metrics, activeInput);
+  }, [result, activeInput, onMetricsChange]);
 
   const resetCurrentMethod = () => {
     if (!methodName) return;
@@ -208,13 +253,13 @@ export default function CutAndFillWorkspace({
     if (!methodName) return;
     setInputsByKey((previous) => {
       const current = previous[storageKey] ?? seedMethodInput(methodName, thickness, dipAngle, inheritedCommon);
-      return { ...previous, [storageKey]: withDerivedIncline(updater(current)) };
+      return { ...previous, [storageKey]: updater(current) };
     });
     setExportState("idle");
     setExportMessage("");
   };
 
-  const handleCommonChange = (key: OccurrenceParameterKey | BlockSizeKey, value: number | null) => {
+  const handleCommonChange = (key: OccurrenceParameterKey, value: number | null) => {
     if (INHERITED_COMMON_KEYS.includes(key as OccurrenceParameterKey)) {
       dirtyInherited.current[storageKey]?.add(key);
     }
@@ -224,7 +269,11 @@ export default function CutAndFillWorkspace({
     }));
   };
 
-  const handleIndicatorChange = (key: IndicatorKey, field: "dilutionRate" | "lossRate", value: number | null) => {
+  const handleIndicatorChange = (
+    key: "blockLossDilution" | "preparationLossDilution" | "cuttingLossDilution",
+    field: keyof LossDilutionIndicator,
+    value: number | null,
+  ) => {
     updateInput((input) => ({
       ...input,
       common: {
@@ -236,13 +285,22 @@ export default function CutAndFillWorkspace({
 
   const handleBlockChange = (
     id: string,
-    field: "sectionArea" | "height" | "quantity",
+    field: BlockDimensionField,
     value: number | null,
   ) => {
     updateInput((input) => ({
       ...input,
       blockElements: input.blockElements.map((element) =>
         element.id === id ? { ...element, [field]: value } : element,
+      ),
+    }));
+  };
+
+  const handleBlockShapeChange = (id: string, shape: PillarShape) => {
+    updateInput((input) => ({
+      ...input,
+      blockElements: input.blockElements.map((element) =>
+        element.id === id ? { ...element, shape } : element,
       ),
     }));
   };
@@ -259,14 +317,17 @@ export default function CutAndFillWorkspace({
   const handleAddBlockElement = () => {
     updateInput((input) => ({
       ...input,
-      blockElements: [...input.blockElements, createBlockElement()],
+      blockElements: insertPillarElement(input.blockElements),
     }));
   };
 
   const handleRemoveBlockElement = (id: string) => {
     updateInput((input) => ({
       ...input,
-      blockElements: input.blockElements.filter((element) => element.id !== id),
+      blockElements: input.blockElements.filter((element) => {
+        if (element.id !== id) return true
+        return isPanelElement(element) || isStopeElement(element)
+      }),
     }));
   };
 
@@ -287,7 +348,7 @@ export default function CutAndFillWorkspace({
   const handleAddRow = (section: EngineeringSection) => {
     updateInput((input) => ({
       ...input,
-      [section]: [...input[section], blankDevelopmentRow(section)],
+      [section]: [...input[section], createBlankDevelopmentRow(section)],
     }));
   };
 
@@ -310,7 +371,7 @@ export default function CutAndFillWorkspace({
   };
 
   const handleExport = async () => {
-    if (!activeInput || !result || !hasRows || exportState === "busy") return;
+    if (!activeInput || !result || exportState === "busy") return;
     setExportState("busy");
     setExportMessage("正在生成 Excel 工作簿…");
     try {
@@ -335,32 +396,31 @@ export default function CutAndFillWorkspace({
     }
   };
 
-  const actionButtons = (
-    <div className="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        onClick={resetCurrentMethod}
-        className={`inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition ${darkMode ? "border-gray-600 hover:bg-gray-800" : "border-gray-300 bg-white hover:bg-gray-100"}`}
-        title="清空当前方法已填内容"
-        aria-label="清空当前方法已填内容"
-        data-testid="clear-cut-and-fill"
-      >
-        <RefreshCw className="h-4 w-4" aria-hidden />
-        清空
-      </button>
-      <button
-        type="button"
-        onClick={() => void handleExport()}
-        disabled={!hasRows || exportState === "busy"}
-        className="inline-flex h-10 items-center gap-1.5 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        title="导出当前方法的 Excel 工作簿"
-        aria-label="导出当前方法的 Excel 工作簿"
-        data-testid="export-cut-and-fill"
-      >
-        <Download className="h-4 w-4" aria-hidden />
-        导出 Excel
-      </button>
-    </div>
+  const clearButton = (
+    <button
+      type="button"
+      onClick={resetCurrentMethod}
+      className={textActionClass(darkMode)}
+      title="清空当前方法已填内容"
+      aria-label="清空当前方法已填内容"
+      data-testid="clear-cut-and-fill"
+    >
+      清空
+    </button>
+  );
+
+  const exportButton = (
+    <button
+      type="button"
+      onClick={() => void handleExport()}
+      disabled={exportState === "busy"}
+      className={textActionClass(darkMode)}
+      title="导出当前方法的 Excel 工作簿"
+      aria-label="导出当前方法的 Excel 工作簿"
+      data-testid="export-cut-and-fill"
+    >
+      导出 Excel
+    </button>
   );
 
   const Frame = embedded ? "div" : "main";
@@ -377,7 +437,7 @@ export default function CutAndFillWorkspace({
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">{appTitle}</h1>
           <p className={`mt-3 max-w-xl text-sm leading-6 ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
-            请从采矿方法打开一个方法，进入参照指标、矿块构成与采切工程。
+            请从采矿方法打开一个方法，进入矿体参数、矿块结构参数与采切工程。
           </p>
           <div className={`mt-8 flex items-center gap-2 rounded-lg border border-dashed px-4 py-3 text-sm ${darkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>
             <Info className="h-4 w-4 shrink-0" aria-hidden />
@@ -390,10 +450,10 @@ export default function CutAndFillWorkspace({
 
   return (
     <Frame
-      className={`min-h-0 flex-1 overflow-y-auto ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}
+      className={`min-h-0 flex-1 ${embedded ? "" : "overflow-y-auto"} ${darkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`}
       data-testid="cut-and-fill-workspace"
     >
-      <div className={`flex w-full flex-col gap-3 ${embedded ? "" : "mx-auto max-w-[1880px] px-3 py-3 lg:px-5 lg:py-4"}`}>
+      <div ref={workspaceRef} className={`flex min-w-0 w-full flex-col gap-3 ${embedded ? "" : "mx-auto max-w-[1880px] px-3 py-3 lg:px-5 lg:py-4"}`}>
         <header
           data-testid="method-workspace-header"
           className={`flex flex-wrap items-start justify-between gap-3 border-b ${embedded ? "pb-5" : "pb-3"} ${darkMode ? "border-gray-700" : "border-gray-200"}`}
@@ -419,7 +479,7 @@ export default function CutAndFillWorkspace({
                 </div>
                 <h1 className="truncate text-2xl font-semibold tracking-tight lg:text-3xl">{methodName}</h1>
                 <p className={`mt-3 text-sm leading-6 ${darkMode ? "text-gray-400" : "text-gray-600"}`}>
-                  项目：{projectName}
+                  本方法与手册其他方法共用采切计算模板，按矿块结构参数、采准与切割分别填写。项目：{projectName}
                   {thickness == null ? "" : ` · 厚度 ${thickness} m`}
                   {dipAngle == null ? "" : ` · 倾角 ${dipAngle}°`}
                 </p>
@@ -438,21 +498,16 @@ export default function CutAndFillWorkspace({
               </>
             )}
           </div>
-          {actionButtons}
+          {clearButton}
         </header>
 
-        <ReferenceIndicatorsPanel
+        <OreBodyParametersPanel
           key={`${storageKey}-common-${templateVersion}`}
           common={activeInput.common}
           issues={result.issues}
-          collapsed={Boolean(commonCollapsed[storageKey])}
           occurrenceCollapsed={occurrenceCollapsed[storageKey] ?? true}
           darkMode={darkMode}
           onChange={handleCommonChange}
-          onIndicatorChange={handleIndicatorChange}
-          onToggle={() =>
-            setCommonCollapsed((previous) => ({ ...previous, [storageKey]: !previous[storageKey] }))
-          }
           onToggleOccurrence={() =>
             setOccurrenceCollapsed((previous) => ({ ...previous, [storageKey]: !previous[storageKey] }))
           }
@@ -463,6 +518,7 @@ export default function CutAndFillWorkspace({
             <BlockElementsPanel
               key={`${storageKey}-block-${templateVersion}`}
               elements={activeInput.blockElements}
+              input={activeInput}
               issues={result.issues}
               collapsed={Boolean(blockCollapsed[storageKey])}
               darkMode={darkMode}
@@ -470,6 +526,7 @@ export default function CutAndFillWorkspace({
                 setBlockCollapsed((previous) => ({ ...previous, [storageKey]: !previous[storageKey] }))
               }
               onChange={handleBlockChange}
+              onShapeChange={handleBlockShapeChange}
               onNameChange={handleBlockNameChange}
               onAdd={handleAddBlockElement}
               onRemove={handleRemoveBlockElement}
@@ -480,6 +537,11 @@ export default function CutAndFillWorkspace({
                   key={`${storageKey}-${section}-${templateVersion}`}
                   section={section}
                   rows={activeInput[section]}
+                  indicator={
+                    section === "preparation"
+                      ? activeInput.common.preparationLossDilution
+                      : activeInput.common.cuttingLossDilution
+                  }
                   issues={result.issues}
                   collapsed={sectionState[section]}
                   darkMode={darkMode}
@@ -487,6 +549,13 @@ export default function CutAndFillWorkspace({
                   onAddRow={() => handleAddRow(section)}
                   onRemoveRow={(rowId) => handleRemoveRow(section, rowId)}
                   onRowChange={(rowId, field, value) => handleRowChange(section, rowId, field, value)}
+                  onIndicatorChange={(field, value) =>
+                    handleIndicatorChange(
+                      section === "preparation" ? "preparationLossDilution" : "cuttingLossDilution",
+                      field,
+                      value,
+                    )
+                  }
                 />
               ))}
             </section>
@@ -503,10 +572,17 @@ export default function CutAndFillWorkspace({
           </NoticeBanner>
         ) : null}
 
-        <div className="min-h-[300px] flex-1">
-          <CutAndFillResultTable input={activeInput} result={result} darkMode={darkMode} />
+        <div className="min-w-0">
+          <CutAndFillResultTable
+            key={`${storageKey}-result-${templateVersion}`}
+            input={activeInput}
+            result={result}
+            darkMode={darkMode}
+            headerAction={exportButton}
+            onLocateInput={handleLocateInput}
+          />
         </div>
-        <CutAndFillMetrics metrics={result.metrics} issues={result.issues} darkMode={darkMode} />
+        <CutAndFillMetrics result={result} darkMode={darkMode} />
       </div>
     </Frame>
   );

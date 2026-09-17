@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   createEmptyProject,
   isOreBodyComplete,
@@ -39,6 +39,8 @@ type ProjectContextValue = {
   closeCalculation: () => void
   goPreviousStage: () => boolean
   completeStage: () => boolean
+  saveNow: () => void
+  returnToHome: () => void
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
@@ -77,6 +79,8 @@ export function ProjectProvider({
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null)
 
   const project = store.projects.find((item) => item.id === store.currentProjectId) ?? null
+  const storeRef = useRef(store)
+  storeRef.current = store
 
   useEffect(() => {
     if (!shouldPersist) return
@@ -87,6 +91,12 @@ export function ProjectProvider({
     setActiveOreBodyId(null)
     setActiveCandidateId(null)
   }
+
+  const returnToHome = useCallback(() => {
+    if (shouldPersist) setStore(loadProjectStore())
+    setStage('overview')
+    resetNested()
+  }, [shouldPersist])
 
   const setProject = useCallback((next: ProjectUpdater) => {
     setStore((previous) => {
@@ -146,17 +156,16 @@ export function ProjectProvider({
   }, [])
 
   const enterProject = useCallback((projectId: string) => {
-    let found: MiningProject | undefined
+    const found = storeRef.current.projects.find((item) => item.id === projectId)
+    if (!found) return false
+    const at = Date.now()
     setStore((previous) => {
-      found = previous.projects.find((item) => item.id === projectId)
-      if (!found) return previous
-      const at = Date.now()
+      if (!previous.projects.some((item) => item.id === projectId)) return previous
       return {
         currentProjectId: projectId,
         projects: previous.projects.map((item) => (item.id === projectId ? withProjectOpened(item, at) : item)),
       }
     })
-    if (!found) return false
     resetNested()
     setStage(isOverviewComplete(found) ? 'parameters' : 'overview')
     return true
@@ -256,6 +265,22 @@ export function ProjectProvider({
     return selectStage(previous)
   }, [activeCandidateId, activeOreBodyId, selectStage, stage])
 
+  const saveNow = useCallback(() => {
+    setStore((previous) => {
+      const existing = previous.projects.find((item) => item.id === previous.currentProjectId)
+      const next = existing
+        ? {
+            ...previous,
+            projects: previous.projects.map((item) =>
+              item.id === existing.id ? withProjectUpdated(existing) : item,
+            ),
+          }
+        : previous
+      if (shouldPersist) saveProjectStore(next)
+      return next
+    })
+  }, [shouldPersist])
+
   const completeStage = useCallback(() => {
     if (activeOreBodyId) {
       const body = project?.oreBodies.find((item) => item.id === activeOreBodyId)
@@ -295,6 +320,8 @@ export function ProjectProvider({
       closeCalculation,
       goPreviousStage,
       completeStage,
+      saveNow,
+      returnToHome,
     }),
     [
       store.projects,
@@ -315,6 +342,8 @@ export function ProjectProvider({
       closeCalculation,
       goPreviousStage,
       completeStage,
+      saveNow,
+      returnToHome,
     ],
   )
 

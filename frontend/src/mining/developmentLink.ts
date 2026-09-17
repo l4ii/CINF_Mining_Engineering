@@ -3,12 +3,12 @@ import type { DevelopmentRowInput } from './types'
 function product(
   quantity: number | null,
   single: number | null,
-  total: number | null,
+  total: number | null | undefined,
   edited: 'quantity' | 'single' | 'total',
 ): { quantity: number | null; single: number | null; total: number | null } {
   let nextQuantity = quantity
   let nextSingle = single
-  let nextTotal = total
+  let nextTotal = total ?? null
   if (edited === 'quantity') {
     if (nextQuantity != null && nextSingle != null) nextTotal = nextQuantity * nextSingle
     else if (nextQuantity != null && nextQuantity !== 0 && nextTotal != null) nextSingle = nextTotal / nextQuantity

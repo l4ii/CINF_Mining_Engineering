@@ -4,8 +4,8 @@ export function unitAddonClass(darkMode: boolean, heightClass = 'h-[38px]'): str
   }`
 }
 
-export function unitInputClass(extra = ''): string {
-  return `h-[38px] min-w-0 flex-1 rounded-l-md border px-2 text-center text-sm outline-none ${extra}`
+export function unitInputClass(extra = '', heightClass = 'h-[38px]'): string {
+  return `${heightClass} min-w-0 flex-1 rounded-l-md border px-2 text-center text-sm outline-none ${extra}`
 }
 
 export function unitInputWithAddonClass(extra = ''): string {

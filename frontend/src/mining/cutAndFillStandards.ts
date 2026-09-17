@@ -88,3 +88,14 @@ export function classifyDip(value: number): DipBand | null {
   if (value <= 50) return 'inclined'
   return 'steep'
 }
+
+export function composeOreBodyClassLabel(dipAngle: number | null, thickness: number | null): string {
+  if (dipAngle == null || thickness == null) return '—'
+  const dip = classifyDip(dipAngle)
+  const thicknessBand = classifyThickness(thickness)
+  if (!dip || !thicknessBand) return '—'
+  const dipLabel = DIP_BANDS.find((band) => band.id === dip)?.label.replace(/矿体$/, '') ?? ''
+  const thicknessLabel = THICKNESS_BANDS.find((band) => band.id === thicknessBand)?.label ?? ''
+  if (!dipLabel || !thicknessLabel) return '—'
+  return `${dipLabel}${thicknessLabel}`
+}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createMethodInput } from './methodConfigs'
 import {
   createCandidate,
   createEmptyProject,
@@ -8,6 +9,7 @@ import {
   isOreBodyComplete,
   isStageComplete,
   isStageUnlocked,
+  loadProjectStore,
   nextProjectStage,
   normalizeProject,
   oreBodyDisplayName,
@@ -15,10 +17,12 @@ import {
   pickOreBodyForMethods,
   previousProjectStage,
   PROJECT_LIST_PAGE_SIZE,
+  PROJECT_STORE_KEY,
   cloneProjectAsImport,
   rememberOreBodyCategory,
   listOreBodyCategories,
   reorderOreBodies,
+  saveProjectStore,
   updateOreBodyOccurrence,
   withProjectOpened,
   withProjectUpdated,
@@ -234,5 +238,43 @@ describe('mining project model', () => {
     expect(paginateItems(items, 2).items).toEqual([7, 8, 9, 10, 11])
     expect(paginateItems(items, 9).page).toBe(2)
     expect(paginateItems([], 1)).toEqual({ page: 1, pageCount: 1, total: 0, items: [] })
+  })
+
+  it('stores method calculation worksheets on candidates through the project store', () => {
+    const calculationInput = createMethodInput('上向进路充填法')
+    const panel = calculationInput.blockElements.find((element) => element.kind === 'panel')
+    if (panel) panel.length = 20
+    const candidate = createCandidate({ methodName: '上向进路充填法', calculationInput })
+    expect(candidate.calculationInput?.blockElements.find((element) => element.kind === 'panel')?.length).toBe(20)
+
+    const project = {
+      ...createEmptyProject('东区试验矿', 1),
+      oreBodies: [createOreBody({ candidates: [candidate] })],
+    }
+    saveProjectStore({ projects: [project], currentProjectId: project.id })
+    const loaded = loadProjectStore()
+    expect(loaded.projects[0].oreBodies[0].candidates[0].calculationInput?.blockElements.find((element) => element.kind === 'panel')?.length).toBe(20)
+  })
+
+  it('reloads the project list without restoring a saved working page', () => {
+    const project = createEmptyProject('东区试验矿', 1)
+    localStorage.setItem(
+      PROJECT_STORE_KEY,
+      JSON.stringify({
+        projects: [project],
+        currentProjectId: project.id,
+        stage: 'methods',
+        currentView: 'settings',
+        activeOreBodyId: 'orebody-1',
+      }),
+    )
+    const loaded = loadProjectStore()
+    expect(loaded.currentProjectId).toBe(project.id)
+    expect(loaded.projects).toHaveLength(1)
+    expect(loaded.projects[0].name).toBe('东区试验矿')
+    expect(loaded).toEqual({
+      projects: loaded.projects,
+      currentProjectId: project.id,
+    })
   })
 })

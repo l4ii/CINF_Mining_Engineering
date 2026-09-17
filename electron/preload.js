@@ -5,6 +5,11 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('electronAPI', {
   /** 前端就绪后主进程关闭闪屏并显示主窗口（与 Flow 一致） */
   appReady: () => ipcRenderer.send('app:ready'),
+  onResetHome: (callback) => {
+    const listener = () => callback()
+    ipcRenderer.on('app:reset-home', listener)
+    return () => ipcRenderer.removeListener('app:reset-home', listener)
+  },
   // 更新相关 API
   update: {
     // 检查更新

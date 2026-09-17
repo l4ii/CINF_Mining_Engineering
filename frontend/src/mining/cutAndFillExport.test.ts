@@ -9,17 +9,12 @@ describe('cut-and-fill workbook export', () => {
     input.common = {
       ...input.common,
       dipAngle: 20,
-      levelHeight: 50,
-      strikeLength: 120,
-      inclinedLength: 146.1902224,
       trueThickness: 25.7,
       oreDensity: 2.82,
       wasteDensity: 2.8,
-      cuttingLossDilution: { lossRate: 0.1, dilutionRate: 0.05 },
-      stopingLossDilution: { lossRate: 0.05, dilutionRate: 0.05 },
-      crownSillLossDilution: { lossRate: 0.06, dilutionRate: 0.05 },
-      barrierLossDilution: { lossRate: 0.1, dilutionRate: 0.05 },
-      pointPillarLossDilution: { lossRate: 1, dilutionRate: 0 },
+      blockLossDilution: { lossRate: 0.05, dilutionRate: 0.05 },
+      preparationLossDilution: { lossRate: 0.1, dilutionRate: 0.05 },
+      cuttingLossDilution: { lossRate: 0.08, dilutionRate: 0.04 },
     }
     input.preparation = [{
       id: 'r1',
@@ -44,7 +39,7 @@ describe('cut-and-fill workbook export', () => {
     expect(sheet.getCell('A1').font.name).toBe('方正小标宋简体')
     const firstColumnValues = Array.from({ length: sheet.rowCount }, (_, index) => sheet.getCell(index + 1, 1).value)
     expect(firstColumnValues).toContain('矿体倾角')
-    expect(firstColumnValues).toContain('切割贫损指标损失率')
+    expect(firstColumnValues).toContain('切割工程损失率')
     expect(firstColumnValues).toContain('穿脉巷道')
     expect(firstColumnValues).toContain('采切比')
 

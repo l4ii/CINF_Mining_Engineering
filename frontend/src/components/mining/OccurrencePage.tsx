@@ -1,25 +1,17 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
 import { GripVertical, Search, Trash2 } from 'lucide-react'
-import { classifyDip, classifyThickness, DIP_BANDS, THICKNESS_BANDS } from '../../mining/cutAndFillStandards'
+import { composeOreBodyClassLabel } from '../../mining/cutAndFillStandards'
 import {
   createOreBody,
   isOreBodyOccurrenceReady,
-  listOreBodyCategories,
   paginateItems,
   parseProjectNumber,
-  rememberOreBodyCategory,
   reorderOreBodies,
   updateOreBodyOccurrence,
 } from '../../mining/project'
 import { useProject } from '../../context/ProjectContext'
 import { ConfirmDialog } from '../shell/AppDialog'
 import { StageNav, StagePageShell, stageInputSurface, stageSurface } from './StagePageShell'
-
-function bandLabel(id: string | null, bands: Array<{ id: string; label: string }>): string {
-  if (!id) return '—'
-  return bands.find((band) => band.id === id)?.label ?? '—'
-}
 
 function hideNativeDragGhost(transfer: DataTransfer) {
   if (typeof transfer.setDragImage !== 'function') return
@@ -83,114 +75,6 @@ function createFloatingRowPreview(row: HTMLTableRowElement, darkMode: boolean): 
   return wrap
 }
 
-function OreBodyCategoryInput({
-  value,
-  options,
-  onChange,
-  onCommit,
-  ariaLabel,
-  placeholder,
-  inputSurface,
-  darkMode,
-}: {
-  value: string
-  options: string[]
-  onChange: (value: string) => void
-  onCommit: (value: string) => void
-  ariaLabel: string
-  placeholder: string
-  inputSurface: string
-  darkMode: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null)
-  const boxRef = useRef<HTMLDivElement | null>(null)
-  const listRef = useRef<HTMLUListElement | null>(null)
-  const current = value.trim()
-
-  const updateMenuPos = useCallback(() => {
-    const rect = boxRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setMenuPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
-  }, [])
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setMenuPos(null)
-      return
-    }
-    updateMenuPos()
-    window.addEventListener('resize', updateMenuPos)
-    document.addEventListener('scroll', updateMenuPos, true)
-    return () => {
-      window.removeEventListener('resize', updateMenuPos)
-      document.removeEventListener('scroll', updateMenuPos, true)
-    }
-  }, [open, updateMenuPos])
-
-  return (
-    <div ref={boxRef} className="relative h-9">
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onFocus={() => setOpen(true)}
-        onBlur={(event) => {
-          onCommit(event.target.value)
-          window.setTimeout(() => setOpen(false), 120)
-        }}
-        aria-label={ariaLabel}
-        placeholder={placeholder}
-        autoComplete="off"
-        className={`absolute inset-0 h-full w-full appearance-none rounded-md border px-2 text-center text-base outline-none [line-height:34px] focus:border-blue-500 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-list-button]:hidden ${inputSurface}`}
-      />
-      <span
-        className={`pointer-events-none absolute inset-y-0 right-0 flex w-6 items-center justify-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}
-        aria-hidden
-      >
-        <span className="mt-px block h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-current" />
-      </span>
-      {open && options.length > 0 && menuPos
-        ? createPortal(
-            <ul
-              ref={listRef}
-              data-testid="orebody-category-options"
-              style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, width: menuPos.width, zIndex: 70 }}
-              className={`max-h-40 overflow-auto rounded-md border py-1 text-center text-base shadow-lg ${
-                darkMode ? 'border-gray-600 bg-gray-900 text-gray-100' : 'border-gray-200 bg-white text-gray-900'
-              }`}
-            >
-              {options.map((option) => (
-                <li key={option}>
-                  <button
-                    type="button"
-                    onMouseDown={(event) => {
-                      event.preventDefault()
-                      onChange(option)
-                      onCommit(option)
-                      setOpen(false)
-                    }}
-                    className={`flex h-8 w-full items-center justify-center px-3 ${
-                      option === current
-                        ? darkMode
-                          ? 'bg-gray-800'
-                          : 'bg-blue-50'
-                        : darkMode
-                          ? 'hover:bg-gray-800'
-                          : 'hover:bg-blue-50'
-                    }`}
-                  >
-                    {option}
-                  </button>
-                </li>
-              ))}
-            </ul>,
-            document.body,
-          )
-        : null}
-    </div>
-  )
-}
-
 export default function OccurrencePage({
   darkMode = false,
   language = 'zh',
@@ -198,11 +82,10 @@ export default function OccurrencePage({
   darkMode?: boolean
   language?: 'zh' | 'en'
 }) {
-  const { project, projects, setProject, selectOreBody } = useProject()
+  const { project, setProject, selectOreBody } = useProject()
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
-  const [categoryCatalogVersion, setCategoryCatalogVersion] = useState(0)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const draggingIdRef = useRef<string | null>(null)
@@ -221,10 +104,6 @@ export default function OccurrencePage({
     [bodies, keyword],
   )
   const listing = paginateItems(matchedBodies, page)
-  const categoryOptions = useMemo(
-    () => listOreBodyCategories(projects),
-    [projects, categoryCatalogVersion],
-  )
 
   const clearRowDrag = useCallback(() => {
     draggingIdRef.current = null
@@ -340,21 +219,6 @@ export default function OccurrencePage({
     })
   }
 
-  const patchCategory = (id: string, category: string) => {
-    setProject((current) => {
-      if (!current) return current
-      return {
-        ...current,
-        oreBodies: current.oreBodies.map((body) => (body.id === id ? { ...body, category } : body)),
-      }
-    })
-  }
-
-  const commitCategory = (value: string) => {
-    rememberOreBodyCategory(value)
-    setCategoryCatalogVersion((current) => current + 1)
-  }
-
   const enterMethod = (id: string) => {
     selectOreBody(id)
   }
@@ -387,8 +251,8 @@ export default function OccurrencePage({
         </div>
         <p className={`mt-1 text-base leading-7 ${muted}`}>
           {isEn
-            ? 'Add ore bodies and enter dip and true thickness. Handbook bands are derived automatically. Ore-body category can be typed. Drag the handle to change table order. Next, click Enter methods on each row and adopt one mining method; the adopted method appears in this table.'
-            : '添加矿体并填写倾角、真厚度。分带由规范自动判定。矿体类别可自行输入。编号可拖动调整。下一步请为每个矿体点击「进入方法」，并在采矿方法中选定一个采用方法；选定结果会显示在本表中。'}
+            ? 'Add ore bodies and enter dip and true thickness. The ore-body class is determined automatically from handbook bands. Drag the handle to change table order. Next, click Enter methods on each row and adopt one mining method; the adopted method appears in this table.'
+            : '添加矿体并填写倾角、真厚度。矿体类别由倾角与真厚度按规范自动判定。编号可拖动调整。下一步请为每个矿体点击「进入方法」，并在采矿方法中选定一个采用方法；选定结果会显示在本表中。'}
         </p>
 
         <div data-testid="occurrence-list-panel" className={`mt-4 overflow-hidden border ${border}`}>
@@ -412,14 +276,12 @@ export default function OccurrencePage({
             <table className="w-full table-fixed border-collapse text-center text-base" data-testid="occurrence-table">
               <colgroup>
                 <col className="w-[6%]" />
-                <col className="w-[14%]" />
-                <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[12%]" />
+                <col className="w-[16%]" />
                 <col className="w-[10%]" />
                 <col className="w-[10%]" />
-                <col className="w-[14%]" />
+                <col className="w-[16%]" />
                 <col className="w-[18%]" />
+                <col className="w-[24%]" />
               </colgroup>
               <thead className={darkMode ? 'bg-gray-800 text-gray-300' : 'bg-slate-50 text-slate-600'}>
                 <tr>
@@ -428,8 +290,6 @@ export default function OccurrencePage({
                   <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'Dip (°)' : '倾角 (°)'}</th>
                   <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'True thickness (m)' : '真厚度 (m)'}</th>
                   <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'Category' : '矿体类别'}</th>
-                  <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'Dip band' : '倾角分带'}</th>
-                  <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'Thickness band' : '厚度分带'}</th>
                   <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'Adopted method' : '采用方法'}</th>
                   <th className={`border-b px-3 py-2.5 text-center text-sm font-semibold ${border}`}>{isEn ? 'Actions' : '操作'}</th>
                 </tr>
@@ -437,21 +297,20 @@ export default function OccurrencePage({
               <tbody>
                 {bodies.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className={`px-3 py-8 text-center ${muted}`}>
+                    <td colSpan={7} className={`px-3 py-8 text-center ${muted}`}>
                       {isEn ? 'No ore bodies yet. Add an ore body to begin.' : '尚未登记矿体。请点击「添加矿体」开始。'}
                     </td>
                   </tr>
                 ) : matchedBodies.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className={`px-3 py-8 text-center ${muted}`}>
+                    <td colSpan={7} className={`px-3 py-8 text-center ${muted}`}>
                       {isEn ? `No ore body matches “${keyword}”.` : `没有匹配「${keyword}」的矿体。`}
                     </td>
                   </tr>
                 ) : (
                   listing.items.map((body) => {
                     const ready = isOreBodyOccurrenceReady(body)
-                    const dipBand = body.dipAngle == null ? null : classifyDip(body.dipAngle)
-                    const thicknessBand = body.thickness == null ? null : classifyThickness(body.thickness)
+                    const classLabel = composeOreBodyClassLabel(body.dipAngle, body.thickness)
                     const rowIndex = bodies.findIndex((item) => item.id === body.id) + 1
                     const isDraggingRow = draggingId === body.id
                     const isDropTarget = dropTargetId === body.id && !isDraggingRow
@@ -530,23 +389,10 @@ export default function OccurrencePage({
                             className={`mx-auto block h-9 w-full appearance-none rounded-md border px-2.5 text-center text-base leading-9 outline-none focus:border-blue-500 ${inputSurface}`}
                           />
                         </td>
-                        <td className="px-3 py-2 align-middle">
-                          <OreBodyCategoryInput
-                            value={body.category ?? ''}
-                            options={categoryOptions}
-                            onChange={(category) => patchCategory(body.id, category)}
-                            onCommit={commitCategory}
-                            ariaLabel={`${isEn ? 'Category' : '矿体类别'} ${rowIndex}`}
-                            placeholder={isEn ? 'Type or select' : '输入或选择'}
-                            inputSurface={inputSurface}
-                            darkMode={darkMode}
-                          />
-                        </td>
                         <td className={`whitespace-nowrap px-3 py-2 align-middle ${muted}`}>
-                          <span className="inline-flex h-9 items-center justify-center">{bandLabel(dipBand, DIP_BANDS)}</span>
-                        </td>
-                        <td className={`whitespace-nowrap px-3 py-2 align-middle ${muted}`}>
-                          <span className="inline-flex h-9 items-center justify-center">{bandLabel(thicknessBand, THICKNESS_BANDS)}</span>
+                          <span data-testid={`ore-body-class-${rowIndex}`} className="inline-flex h-9 items-center justify-center">
+                            {classLabel}
+                          </span>
                         </td>
                         <td className="max-w-0 px-3 py-2 align-middle">
                           <span className="inline-flex h-9 w-full items-center justify-center truncate" title={body.candidates.find((item) => item.id === body.selectedCandidateId)?.methodName || undefined}>

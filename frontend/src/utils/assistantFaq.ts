@@ -23,7 +23,7 @@ export function buildAssistantWelcome(language: 'zh' | 'en'): string {
     '',
     '我是本软件的智能助手，可协助您：',
     '• 在项目概况中新建或选定项目，再按侧栏流程完成基础参数、产状分布和采矿方法；',
-    '• 理解参照指标、矿块构成、采切工程行与指标汇总；',
+    '• 理解矿体参数、矿块结构参数、采切工程行与指标汇总；',
     '• 导出当前方法的 Excel 计算表；',
     '• 说明设置页中的许可、隐私与更新提示。',
     '',
@@ -72,7 +72,7 @@ export function tryRuleBasedAssistantReply(
   const hit = catalog.find((c) => q.includes(normalize(c.name)) || q.includes(normalize(c.id)))
   if (hit) {
     return zh
-      ? `请从产状分布进入采矿方法，针对该矿体新建或按矿体条件选择方法，打开计算区填写参照指标、矿块构成与采切工程，再选定采用方法。完成后返回产状分布。`
+      ? `请从产状分布进入采矿方法，针对该矿体新建或按矿体条件查看建议方法，打开计算区填写矿块结构参数与采切工程，再选定采用方法。完成后返回产状分布。`
       : `Open Mining methods in the sidebar flow. Add methods per ore body, then Open a method. Enter remaining parameters and engineering rows, then adopt one method in the ore-body summary.`
   }
 

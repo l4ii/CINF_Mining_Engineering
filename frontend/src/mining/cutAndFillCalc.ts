@@ -1,8 +1,7 @@
-import { createMethodInput } from './methodConfigs'
+import { createMethodInput, isBlankDevelopmentRow, isPanelElement, isPillarElement, isStopeElement } from './methodConfigs'
 import { resolvedOreLength, resolvedWasteLength } from './developmentLink'
 import type {
   BlockElementInput,
-  BlockElementKind,
   BlockGeometry,
   CalculatedRow,
   CommonParameters,
@@ -16,15 +15,9 @@ import type {
 
 export { createMethodInput }
 
-const PILLAR_KINDS: BlockElementKind[] = ['barrier-pillar', 'crown-pillar', 'sill-pillar', 'point-pillar', 'triangle-ore']
-const INDICATOR_FIELDS = [
-  'cuttingLossDilution',
-  'stopingLossDilution',
-  'crownSillLossDilution',
-  'barrierLossDilution',
-  'pointPillarLossDilution',
-] as const
-const SCALAR_FIELDS = ['dipAngle', 'levelHeight', 'trueThickness', 'oreDensity', 'wasteDensity'] as const
+const INDICATOR_FIELDS = ['preparationLossDilution', 'cuttingLossDilution'] as const
+const SCALAR_FIELDS = ['dipAngle', 'trueThickness', 'oreDensity', 'wasteDensity'] as const
+const DIMENSION_FIELDS = ['length', 'width', 'height', 'quantity'] as const
 
 const mul = (...xs: Array<number | null>) =>
   xs.every((x) => x != null && Number.isFinite(x)) ? xs.reduce((a, x) => (a as number) * (x as number), 1) : null
@@ -41,8 +34,15 @@ export function deriveInclinedLength(dipAngle: number | null, levelHeight: numbe
   return levelHeight / sine
 }
 
-export function elementVolume(element: Pick<BlockElementInput, 'sectionArea' | 'height' | 'quantity'>): number | null {
-  return mul(element.sectionArea, element.height, element.quantity)
+export function elementVolume(element: Pick<BlockElementInput, 'shape' | 'length' | 'width' | 'height' | 'quantity'>): number | null {
+  const shape = element.shape ?? 'rectangular'
+  if (shape === 'cylinder') {
+    return mul(Math.PI, mul(element.width, element.width), 0.25, element.height, element.quantity)
+  }
+  if (shape === 'triangular-prism') {
+    return mul(0.5, element.width, element.height, element.length, element.quantity)
+  }
+  return mul(element.length, element.width, element.height, element.quantity)
 }
 
 function emptyTotals(): SectionTotals {
@@ -61,55 +61,81 @@ function emptyTotals(): SectionTotals {
   }
 }
 
+export function elementLossDilution(
+  element: Pick<BlockElementInput, 'dilutionRate' | 'lossRate'>,
+  fallback: LossDilutionIndicator,
+): LossDilutionIndicator {
+  return {
+    dilutionRate: element.dilutionRate ?? fallback.dilutionRate,
+    lossRate: element.lossRate ?? fallback.lossRate,
+  }
+}
+
 function recoveryFromLoss(lossRate: number | null): number | null {
   if (lossRate == null || !Number.isFinite(lossRate)) return null
   return 1 - lossRate
 }
 
-function isElementUsed(element: BlockElementInput): boolean {
-  return element.sectionArea != null || element.height != null
+export function isElementUsed(element: BlockElementInput): boolean {
+  if (isStopeElement(element) || isPanelElement(element)) return false
+  if (elementVolume(element) != null) return true
+  return element.length != null || element.width != null || element.height != null || element.wasteVolume != null
 }
 
-function volumeOrZero(element: Pick<BlockElementInput, 'sectionArea' | 'height' | 'quantity'>): number {
+function volumeOrZero(element: BlockElementInput): number {
   const volume = elementVolume(element)
   return volume == null ? 0 : volume
 }
 
-function indicatorForKind(kind: BlockElementKind, common: CommonParameters): LossDilutionIndicator {
-  if (kind === 'barrier-pillar') return common.barrierLossDilution
-  if (kind === 'crown-pillar' || kind === 'sill-pillar') return common.crownSillLossDilution
-  if (kind === 'point-pillar') return common.pointPillarLossDilution
-  return common.stopingLossDilution
+export function sectionOreVolume(rows: DevelopmentRowInput[]): number | null {
+  let total: number | null = null
+  for (const row of rows) {
+    const volume = mul(resolvedOreLength(row), row.oreSectionArea)
+    if (volume == null) continue
+    total = (total ?? 0) + volume
+  }
+  return total
 }
 
-function activeElements(input: MiningMethodInput): BlockElementInput[] {
-  return input.blockElements
+function developmentOreVolumeOf(input: MiningMethodInput): number {
+  return (sectionOreVolume(input.preparation) ?? 0) + (sectionOreVolume(input.cutting) ?? 0)
+}
+
+function panelElement(input: MiningMethodInput): BlockElementInput | undefined {
+  return input.blockElements.find((element) => isPanelElement(element))
+}
+
+function stopeElement(input: MiningMethodInput): BlockElementInput | undefined {
+  return input.blockElements.find((element) => isStopeElement(element))
+}
+
+function pillarElements(input: MiningMethodInput): BlockElementInput[] {
+  return input.blockElements.filter((element) => isPillarElement(element))
+}
+
+export function computedStopeVolume(input: MiningMethodInput): number | null {
+  const panel = panelElement(input)
+  const panelVolume = panel ? elementVolume(panel) : null
+  if (panelVolume == null) return null
+  const pillars = pillarElements(input).reduce((sum, element) => sum + volumeOrZero(element), 0)
+  return panelVolume - pillars - developmentOreVolumeOf(input)
 }
 
 export function computeGeometry(input: MiningMethodInput): BlockGeometry {
   const inclinedLength = deriveInclinedLength(input.common.dipAngle, input.common.levelHeight)
-  const panelOreVolume = mul(input.common.strikeLength, inclinedLength, input.common.trueThickness)
-  const developmentOreVolume = [...input.preparation, ...input.cutting].reduce((sum, row) => {
-    const volume = mul(resolvedOreLength(row), row.oreSectionArea)
-    return add(sum, volume ?? 0) as number
-  }, 0)
-  const elements = activeElements(input)
-  const pillarOreVolume = elements
-    .filter((element) => PILLAR_KINDS.includes(element.kind))
-    .reduce((sum, element) => sum + volumeOrZero(element), 0)
-  const primary = elements.find((element) => element.kind === 'primary-stope')
-  const secondary = elements.find((element) => element.kind === 'secondary-stope')
-  const primaryStopeVolume = primary && isElementUsed(primary) ? elementVolume(primary) : null
-  const secondaryStopeVolume = secondary && isElementUsed(secondary) ? elementVolume(secondary) : null
-  const stopeRemainder = add(primaryStopeVolume ?? 0, secondaryStopeVolume ?? 0)
+  const panel = panelElement(input)
+  const panelOreVolume = panel ? elementVolume(panel) : null
+  const developmentOreVolume = developmentOreVolumeOf(input)
+  const pillarOreVolume = pillarElements(input).reduce((sum, element) => sum + volumeOrZero(element), 0)
+  const primaryStopeVolume = computedStopeVolume(input)
   return {
     inclinedLength,
     panelOreVolume,
     developmentOreVolume,
     pillarOreVolume,
-    stopeRemainder,
+    stopeRemainder: primaryStopeVolume,
     primaryStopeVolume,
-    secondaryStopeVolume,
+    secondaryStopeVolume: null,
   }
 }
 
@@ -161,7 +187,7 @@ function blankCalculated(partial: Partial<CalculatedRow> & Pick<CalculatedRow, '
   }
 }
 
-function developmentRow(row: DevelopmentRowInput, common: CommonParameters): CalculatedRow {
+function developmentRow(row: DevelopmentRowInput, common: CommonParameters, indicator: LossDilutionIndicator): CalculatedRow {
   const oreLength = resolvedOreLength(row)
   const wasteLength = resolvedWasteLength(row)
   const oreVolume = mul(oreLength, row.oreSectionArea)
@@ -174,7 +200,7 @@ function developmentRow(row: DevelopmentRowInput, common: CommonParameters): Cal
     totalWasteLength: wasteLength,
     totalLength: oreLength == null && wasteLength == null ? null : add(oreLength ?? 0, wasteLength ?? 0),
     note: row.note,
-    ...applyReserves(oreVolume, wasteVolume, common.cuttingLossDilution, common),
+    ...applyReserves(oreVolume, wasteVolume, indicator, common),
   })
 }
 
@@ -185,10 +211,10 @@ function stopingRow(
 ): CalculatedRow {
   return blankCalculated({
     id: element.id,
-    name: element.name,
+    name: element.name.trim() || '矿柱',
     kind: element.kind,
     note: '',
-    ...applyReserves(oreVolume, 0, indicatorForKind(element.kind, common), common),
+    ...applyReserves(oreVolume, element.wasteVolume ?? 0, elementLossDilution(element, common.blockLossDilution), common),
   })
 }
 
@@ -251,6 +277,7 @@ export function validateMiningInput(input: MiningMethodInput): ValidationIssue[]
   for (const [group, rows] of [['preparation', input.preparation], ['cutting', input.cutting]] as const) {
     const names = new Set<string>()
     for (const row of rows) {
+      if (isBlankDevelopmentRow(row)) continue
       if (!row.name.trim()) issues.push({ field: `${group}.${row.id}.name`, code: 'required', message: '工程名称不能为空' })
       if (names.has(row.name)) issues.push({ field: `${group}.${row.id}.name`, code: 'duplicate-name', message: '工程名称重复' })
       names.add(row.name)
@@ -261,32 +288,60 @@ export function validateMiningInput(input: MiningMethodInput): ValidationIssue[]
     }
   }
   for (const element of input.blockElements) {
-    for (const key of ['sectionArea', 'height', 'quantity'] as const) {
+    if (element.wasteVolume != null && (!Number.isFinite(element.wasteVolume) || element.wasteVolume < 0)) {
+      issues.push({ field: `blockElements.${element.id}.wasteVolume`, code: 'non-negative', message: '伴采岩石体积应为非负数' })
+    }
+    for (const key of DIMENSION_FIELDS) {
       const value = element[key]
       if (value != null && value < 0) {
         issues.push({ field: `blockElements.${element.id}.${key}`, code: 'non-negative', message: '不能为负数' })
       }
     }
+    if (isPanelElement(element)) continue
+    const used = isStopeElement(element) ? computedStopeVolume(input) != null : isElementUsed(element)
+    if (!used) continue
+    for (const key of ['dilutionRate', 'lossRate'] as const) {
+      const value = element[key]
+      const path = `blockElements.${element.id}.${key}`
+      if (value == null) issues.push({ field: path, code: 'required', message: '未填写' })
+      else if (value < 0 || value > 1) issues.push({ field: path, code: 'range', message: '应在0到1之间' })
+    }
+  }
+  const stopeVolume = computedStopeVolume(input)
+  if (stopeVolume == null && stopeElement(input)?.wasteVolume != null) {
+    issues.push({ field: 'primary-stope', code: 'missing-panel', message: '伴采岩石已计入；请补齐矿块尺寸以计算采场矿石体积' })
+  }
+  if (stopeVolume != null && stopeVolume < 0) {
+    issues.push({ field: 'primary-stope', code: 'negative-stope', message: '采场体积为负，请核减矿柱或采切工程矿石体积' })
   }
   return issues
 }
 
-function buildStopingRows(input: MiningMethodInput, _geometry: BlockGeometry): CalculatedRow[] {
-  return activeElements(input).flatMap((element) => {
-    if (!isElementUsed(element) && volumeOrZero(element) <= 0) return []
-    return [stopingRow(element, elementVolume(element) ?? 0, input.common)]
+function buildStopingRows(input: MiningMethodInput): CalculatedRow[] {
+  const rows: CalculatedRow[] = []
+  pillarElements(input).forEach((element, index) => {
+    if (!isElementUsed(element)) return
+    const named = { ...element, name: element.name.trim() || `矿柱${index + 1}` }
+    rows.push(stopingRow(named, elementVolume(element) ?? 0, input.common))
   })
+  const stope = stopeElement(input)
+  const stopeVolume = computedStopeVolume(input)
+  if (stope && (stopeVolume != null || stope.wasteVolume != null)) {
+    rows.push(stopingRow(stope, stopeVolume, input.common))
+  }
+  return rows
 }
 
 export function calculateCutAndFill(input: MiningMethodInput): CutAndFillResult {
   const issues = validateMiningInput(input)
-  const geometry = computeGeometry({
-    ...input,
-    common: { ...input.common, inclinedLength: deriveInclinedLength(input.common.dipAngle, input.common.levelHeight) },
-  })
-  const preparationRows = input.preparation.map((row) => developmentRow(row, input.common))
-  const cuttingRows = input.cutting.map((row) => developmentRow(row, input.common))
-  const stopingRows = buildStopingRows(input, geometry)
+  const geometry = computeGeometry(input)
+  const preparationRows = input.preparation
+    .filter((row) => !isBlankDevelopmentRow(row))
+    .map((row) => developmentRow(row, input.common, input.common.preparationLossDilution))
+  const cuttingRows = input.cutting
+    .filter((row) => !isBlankDevelopmentRow(row))
+    .map((row) => developmentRow(row, input.common, input.common.cuttingLossDilution))
+  const stopingRows = buildStopingRows(input)
   const preparation = { rows: preparationRows, totals: sumRows(preparationRows) }
   const cutting = { rows: cuttingRows, totals: sumRows(cuttingRows) }
   const developmentTotal = { rows: [], totals: addTotals(preparation.totals, cutting.totals) }
@@ -296,6 +351,7 @@ export function calculateCutAndFill(input: MiningMethodInput): CutAndFillResult 
   const produced = block.totals.producedOre
   for (const row of blockRows) row.share = scale(div(row.producedOre, produced), 100)
   const metric = (value: number | null, unit: string) => ({ value, unit })
+  const recoveryRatio = div(block.totals.producedGeologicalReserve, block.totals.geologicalReserve)
   return {
     sections: { preparation, cutting, developmentTotal, stoping, block },
     geometry,
@@ -309,13 +365,8 @@ export function calculateCutAndFill(input: MiningMethodInput): CutAndFillResult 
       cutAndFillVolumeRatio: metric(scale(div(developmentTotal.totals.totalVolume, produced), 1000), 'm³/kt'),
       wasteRate: metric(scale(div(block.totals.wasteMass, produced), 100), '%'),
       byProductOreProportion: metric(scale(div(developmentTotal.totals.producedOre, produced), 100), '%'),
-      recoveryRate: metric(scale(div(block.totals.producedGeologicalReserve, block.totals.geologicalReserve), 100), '%'),
-      lossRate: metric(
-        block.totals.geologicalReserve == null || block.totals.producedGeologicalReserve == null
-          ? null
-          : 100 - (div(block.totals.producedGeologicalReserve, block.totals.geologicalReserve) ?? 0) * 100,
-        '%',
-      ),
+      recoveryRate: metric(scale(recoveryRatio, 100), '%'),
+      lossRate: metric(recoveryRatio == null ? null : (1 - recoveryRatio) * 100, '%'),
       dilutionRate: metric(
         scale(div(add(block.totals.producedOre, scale(block.totals.producedGeologicalReserve, -1)), produced), 100),
         '%',

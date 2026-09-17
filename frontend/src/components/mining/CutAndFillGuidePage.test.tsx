@@ -80,13 +80,13 @@ describe("ore-body method summary", () => {
     expect(methodList).toHaveTextContent("上向进路充填法");
     expect(methodList).not.toHaveTextContent("全面法");
     expect(
-      screen.getByRole("button", { name: "按矿体条件选择" }),
+      screen.getByRole("button", { name: "按矿体条件推荐" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "按矿体条件选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "按矿体条件推荐" }));
     expect(screen.getByRole("heading", { name: /^采矿方法$/ })).toBeInTheDocument();
     expect(
-      screen.getByRole("dialog", { name: "按矿体条件选择采矿方法" }),
+      screen.getByRole("dialog", { name: "按矿体产状推荐采矿方法" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("method-assist-dialog")).toBeInTheDocument();
     expect(
@@ -115,14 +115,14 @@ describe("ore-body method summary", () => {
   it("prefills assisted selection from the current ore body each time it opens", () => {
     renderGuide();
 
-    fireEvent.click(screen.getByRole("button", { name: "按矿体条件选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "按矿体条件推荐" }));
     fireEvent.click(
       screen.getByRole("button", { name: "选择厚矿体 × 急倾斜矿体" }),
     );
     expect(screen.getByLabelText("厚度")).toHaveValue("");
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("button", { name: "按矿体条件选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "按矿体条件推荐" }));
 
     expect(screen.getByLabelText("厚度")).toHaveValue("3");
     expect(screen.getByLabelText("倾角")).toHaveValue("35");
@@ -140,12 +140,9 @@ describe("ore-body method summary", () => {
     addMethod("上向进路充填法");
 
     expect(screen.getByDisplayValue("上向进路充填法")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("请输入名称")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("名称 1"), {
-      target: { value: "方案甲" },
-    });
-    expect(screen.getByDisplayValue("方案甲")).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "名称" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("请输入名称")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "名称" })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "采矿方法" })).toBeInTheDocument();
     expect(
       screen.queryByTestId("method-calculation-page"),
     ).not.toBeInTheDocument();
@@ -154,7 +151,7 @@ describe("ore-body method summary", () => {
   it("adds every method from the selected handbook region through assisted selection", () => {
     renderGuide();
 
-    fireEvent.click(screen.getByRole("button", { name: "按矿体条件选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "按矿体条件推荐" }));
     expect(screen.getByTestId("standard-recommendations")).toHaveTextContent(
       "爆力运矿采矿法、分层崩落法、上向进路充填法、下向分层充填法",
     );
@@ -172,7 +169,7 @@ describe("ore-body method summary", () => {
   it("keeps numeric ore-body inputs and table picking mutually exclusive", () => {
     renderGuide();
 
-    fireEvent.click(screen.getByRole("button", { name: "按矿体条件选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "按矿体条件推荐" }));
     expect(screen.getByLabelText("厚度")).toHaveValue("3");
     expect(screen.getByTestId("standard-cell-thin-inclined")).toHaveClass(
       "ring-2",
@@ -207,7 +204,7 @@ describe("ore-body method summary", () => {
   it("lets the handbook table fill the assist dialog width with compact row padding", () => {
     renderGuide();
 
-    fireEvent.click(screen.getByRole("button", { name: "按矿体条件选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "按矿体条件推荐" }));
 
     expect(screen.getByTestId("standard-method-table")).toHaveClass(
       "h-full",
@@ -231,12 +228,35 @@ describe("ore-body method summary", () => {
     expect(screen.getByTestId("method-calculation-page")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "全面法" })).toBeInTheDocument();
     expect(screen.getByTestId("cut-and-fill-workspace")).toBeInTheDocument();
-    expect(screen.getByText("参照指标")).toBeInTheDocument();
+    expect(screen.queryByText("参照指标")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /矿体参数/ }));
     expect(screen.getByLabelText("矿体密度")).toHaveValue("2.7");
     expect(screen.getByLabelText("矿体密度")).not.toBeDisabled();
     expect(screen.getByLabelText("矿体倾角")).not.toBeDisabled();
     expect(screen.getByTestId("method-page-back")).toBeInTheDocument();
+  });
+
+  it("keeps method calculation inputs after leaving and reopening the method", () => {
+    renderGuide();
+
+    addMethod("上向进路充填法");
+    fireEvent.click(screen.getByRole("button", { name: "打开方法 上向进路充填法" }));
+    fireEvent.change(screen.getByLabelText("矿块长"), { target: { value: "20" } });
+    fireEvent.change(screen.getByLabelText("矿块宽"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("矿块高"), { target: { value: "8" } });
+    const nameField = screen.getAllByTestId(/preparation-.*-name/)[0];
+    const rowId = String(nameField.getAttribute("data-testid")).replace("preparation-", "").replace("-name", "");
+    fireEvent.change(screen.getByLabelText(`采准工程-巷道数目-${rowId}`), { target: { value: "2" } });
+    fireEvent.change(screen.getAllByLabelText("采准工程贫化率")[0], { target: { value: "5" } });
+
+    fireEvent.click(screen.getByTestId("method-page-back"));
+    fireEvent.click(screen.getByRole("button", { name: "打开方法 上向进路充填法" }));
+
+    expect(screen.getByLabelText("矿块长")).toHaveValue("20");
+    expect(screen.getByLabelText("矿块宽")).toHaveValue("10");
+    expect(screen.getByLabelText("矿块高")).toHaveValue("8");
+    expect(screen.getByLabelText(`采准工程-巷道数目-${rowId}`)).toHaveValue("2");
+    expect(screen.getAllByLabelText("采准工程贫化率")[0]).toHaveValue("5");
   });
 
   it("opens the upward drift cut-and-fill module with inherited densities", () => {
@@ -250,7 +270,8 @@ describe("ore-body method summary", () => {
     expect(screen.getByLabelText("矿体密度")).toHaveValue("2.7");
     const header = screen.getByTestId("method-workspace-header");
     expect(header).toContainElement(screen.getByTestId("clear-cut-and-fill"));
-    expect(header).toContainElement(screen.getByTestId("export-cut-and-fill"));
+    expect(header).not.toContainElement(screen.getByTestId("export-cut-and-fill"));
+    expect(screen.getByTestId("cut-and-fill-result-table")).toContainElement(screen.getByTestId("export-cut-and-fill"));
   });
 
   it("adopts one method to complete the ore body", () => {
@@ -269,6 +290,9 @@ describe("ore-body method summary", () => {
     expect(back).toHaveAttribute("aria-label", "返回采矿方法");
     expect(back).not.toHaveTextContent("返回采矿方法");
     expect(back.parentElement).toHaveTextContent("方法计算区");
+    expect(back.parentElement).toHaveClass("relative");
+    expect(back).toHaveClass("-translate-x-full");
+    expect(screen.getByRole("heading", { name: "全面法" }).parentElement).toHaveClass("min-w-0");
   });
 
   it("requires an explicit method choice before opening calculation", () => {
@@ -301,6 +325,7 @@ describe("ore-body method summary", () => {
     addMethod("全面法");
 
     const points = screen.getByTestId("cut-and-fill-point-list");
-    expect(points).toHaveTextContent("0.000");
+    expect(points).not.toHaveTextContent("100.000");
+    expect(screen.getByLabelText("采矿方法").closest("tr")).toHaveTextContent("—");
   });
 });

@@ -51,6 +51,7 @@ export interface WindowChromeApi {
 
 export interface ElectronApi {
   appReady?: () => void
+  onResetHome?: (callback: () => void) => (() => void) | void
   update?: UpdateApi
   license?: LicenseApi
   getDeployInfo?: () => Promise<{ assistantLocalDeploy?: boolean; version?: string; packaged?: boolean } | null>

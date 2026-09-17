@@ -36,7 +36,8 @@ describe('ore-body occurrence list', () => {
     expect(screen.getByRole('columnheader', { name: '倾角 (°)' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '真厚度 (m)' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '矿体类别' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '倾角分带' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '倾角分带' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: '厚度分带' })).not.toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '采用方法' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '编号' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '进入方法 矿体1' })).toBeEnabled()
@@ -59,22 +60,23 @@ describe('ore-body occurrence list', () => {
     expect(enter).toBeDisabled()
     fireEvent.change(screen.getByLabelText('厚度 1'), { target: { value: '3' } })
     expect(enter).toBeEnabled()
-    expect(screen.getByText('倾斜矿体')).toBeInTheDocument()
-    expect(screen.getByText('薄矿体')).toBeInTheDocument()
+    expect(screen.getByTestId('ore-body-class-1')).toHaveTextContent('倾斜薄矿体')
+    expect(screen.getByTestId('ore-body-class-1').tagName).not.toBe('INPUT')
+    expect(screen.getByTestId('ore-body-class-1')).not.toHaveClass('border', 'rounded-md')
     expect(screen.queryByRole('button', { name: '下一步' })).not.toBeInTheDocument()
     expect(screen.getByTestId('stage-nav')).toHaveTextContent('请为每个矿体点击「进入方法」，并在采矿方法中选定一个采用方法')
   })
 
-  it('remembers typed ore-body categories for later selection', () => {
+  it('shows a read-only composed ore-body class instead of a category input', () => {
     renderOccurrence([
-      createOreBody({ name: '1号矿体', dipAngle: 35, thickness: 3 }),
-      createOreBody({ name: '2号矿体', dipAngle: 20, thickness: 8 }),
+      createOreBody({ name: '1号矿体', dipAngle: 20, thickness: 25 }),
+      createOreBody({ name: '2号矿体' }),
     ])
 
-    fireEvent.change(screen.getByLabelText('矿体类别 1'), { target: { value: '硫化矿' } })
-    fireEvent.blur(screen.getByLabelText('矿体类别 1'))
-    fireEvent.focus(screen.getByLabelText('矿体类别 2'))
-    expect(screen.getByTestId('orebody-category-options')).toHaveTextContent('硫化矿')
+    expect(screen.getByTestId('ore-body-class-1')).toHaveTextContent('缓倾斜厚矿体')
+    expect(screen.getByTestId('ore-body-class-2')).toHaveTextContent('—')
+    expect(screen.queryByLabelText('矿体类别 1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('orebody-category-options')).not.toBeInTheDocument()
   })
 
   it('numbers rows by table order and reorders them by dragging', () => {

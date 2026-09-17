@@ -20,7 +20,7 @@ export default function ProjectOverviewPage({
   darkMode?: boolean
   language?: 'zh' | 'en'
 }) {
-  const { project, projects, createProject, importProjects, selectProject, updateProject, deleteProject } = useProject()
+  const { project, projects, createProject, importProjects, selectProject, enterProject, updateProject, deleteProject } = useProject()
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -212,8 +212,8 @@ export default function ProjectOverviewPage({
         </div>
         <p className={`mt-1 text-base leading-7 ${muted}`}>
           {isEn
-            ? 'Register and maintain locally saved projects. Click a project to make it current in the sidebar, use the edit icon to rename it, then choose Next to continue to base parameters. Import a .cinfmine file with Import project or the drop zone below; export from each row.'
-            : '登记并维护本机保存的矿山工程项目。单击项目即可切换为当前工作项目并同步到侧栏；改名请点编辑图标。确认后点击「下一步」进入基础参数。可通过「导入项目」或下方拖放区读取案例文件；导出请使用各行操作。'}
+            ? 'Register and maintain locally saved projects. Click a project name to continue to base parameters. Click elsewhere on the row to make it current in the sidebar, and use the edit icon to rename it. You can also choose Next. Import a .cinfmine file with Import project or the drop zone below; export from each row.'
+            : '登记并维护本机保存的矿山工程项目。单击项目名称进入基础参数；单击其余单元格可切换当前工作项目并同步到侧栏。改名请点编辑图标。也可点击「下一步」进入基础参数。可通过「导入项目」或下方拖放区读取案例文件；导出请使用各行操作。'}
         </p>
 
         {caseMessage ? (
@@ -325,7 +325,9 @@ export default function ProjectOverviewPage({
                         key={item.id}
                         data-testid={named ? `project-row-${item.name.trim()}` : `project-row-${item.id}`}
                         aria-current={current ? 'true' : undefined}
-                        onClick={() => {
+                        onClick={(event) => {
+                          const target = event.target
+                          if (target instanceof Element && target.closest('button, input, a')) return
                           if (!current) selectProject(item.id)
                         }}
                         className={`border-t ${border} ${
@@ -361,11 +363,12 @@ export default function ProjectOverviewPage({
                           ) : (
                             <button
                               type="button"
-                              aria-label={isEn ? `Select project ${item.name.trim()}` : `选定项目 ${item.name.trim()}`}
+                              aria-label={isEn ? `Open project ${item.name.trim()}` : `进入项目 ${item.name.trim()}`}
                               title={item.name.trim()}
                               onClick={(event) => {
+                                event.preventDefault()
                                 event.stopPropagation()
-                                selectProject(item.id)
+                                enterProject(item.id)
                               }}
                               className={`mx-auto flex h-9 w-full min-w-0 items-center justify-center font-medium underline ${
                                 darkMode ? 'text-blue-300 hover:text-blue-200' : 'text-blue-600 hover:text-blue-800'

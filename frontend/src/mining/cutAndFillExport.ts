@@ -32,16 +32,11 @@ function parameterRows(common: CommonParameters): ParameterExportRow[] {
   ]
   return [
     { label: '矿体倾角', value: common.dipAngle, unit: '°' },
-    { label: '中段高度', value: common.levelHeight, unit: 'm' },
-    { label: '矿体斜长', value: common.inclinedLength, unit: 'm' },
     { label: '矿体真厚', value: common.trueThickness, unit: 'm' },
     { label: '矿体密度', value: common.oreDensity, unit: 't/m³' },
     { label: '围岩密度', value: common.wasteDensity, unit: 't/m³' },
-    ...indicator('切割贫损指标', common.cuttingLossDilution),
-    ...indicator('回采贫损指标', common.stopingLossDilution),
-    ...indicator('顶底柱贫损指标', common.crownSillLossDilution),
-    ...indicator('矿柱贫损指标', common.barrierLossDilution),
-    ...indicator('点柱贫损指标', common.pointPillarLossDilution),
+    ...indicator('采准工程', common.preparationLossDilution),
+    ...indicator('切割工程', common.cuttingLossDilution),
   ]
 }
 
@@ -152,7 +147,7 @@ function writeMergedLabel(sheet: Worksheet, rowNumber: number, label: string, fi
 }
 
 function writeParameterSection(sheet: Worksheet, rowNumber: number, common: CommonParameters) {
-  writeMergedLabel(sheet, rowNumber, '参照指标')
+  writeMergedLabel(sheet, rowNumber, '矿体参数')
   rowNumber += 1
   sheet.getRow(rowNumber).values = ['参数名称', '输入值', '单位', '数据状态']
   for (let column = 1; column <= 4; column += 1) styleCell(sheet.getCell(rowNumber, column), 'header', { fill: COLOR_GROUP })
@@ -324,9 +319,10 @@ function writeNotes(sheet: Worksheet, rowNumber: number, result: CutAndFillResul
   writeMergedLabel(sheet, rowNumber, '计算说明与数据状态')
   rowNumber += 1
   const notes = [
-    '采准、切割工程：总长 = 数量 × 单长；体积 = 总长 × 断面。',
-    '切割贫损作用于采准、切割矿石：采出地质储量 = 地质储量 × (1 − 损失率)；采出矿量再按贫化率折算。',
-    '回采工作由矿块构成生成：各部位体积 = 断面 × 高 × 数量，再按对应贫损指标折算储量与采出矿量。',
+    '采准、切割工程：总长 = 数量 × 单长；体积 = 总长 × 断面。采准、切割分别按其步骤贫化率与损失率折算储量。',
+    '矿块与矿柱均可按长方体、圆柱或三棱柱计算。采场体积 = 矿块 − Σ矿柱 − 采准矿石体积 − 切割矿石体积。',
+    '回采工作（矿柱与采场）分别按其贫化率、损失率折算储量与采出矿量。',
+    '回采伴采岩石体积计入采出废石及总体积，不扣减矿块矿石体积。各步骤总体积均为矿石体积与岩石体积之和。',
     '缺失数据或分母为零的派生值显示“无法计算”，不会写入 NaN 或 Infinity。',
   ]
   for (const note of notes) {

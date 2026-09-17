@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyDip, classifyThickness, HANDBOOK_METHOD_NAMES, HANDBOOK_METHODS } from './cutAndFillStandards'
+import { classifyDip, classifyThickness, composeOreBodyClassLabel, HANDBOOK_METHOD_NAMES, HANDBOOK_METHODS } from './cutAndFillStandards'
 
 describe('cut-and-fill standard ranges', () => {
   it('classifies thickness values at handbook boundaries', () => {
@@ -9,6 +9,15 @@ describe('cut-and-fill standard ranges', () => {
     expect(classifyThickness(15)).toBe('medium-thick')
     expect(classifyThickness(50)).toBe('thick')
     expect(classifyThickness(50.01)).toBe('extremely-thick')
+  })
+
+  it('composes a handbook ore-body class from dip and thickness bands', () => {
+    expect(composeOreBodyClassLabel(20, 25)).toBe('缓倾斜厚矿体')
+    expect(composeOreBodyClassLabel(35, 3)).toBe('倾斜薄矿体')
+    expect(composeOreBodyClassLabel(2, 8)).toBe('水平中厚矿体')
+    expect(composeOreBodyClassLabel(55, 0.5)).toBe('急倾斜极薄矿体')
+    expect(composeOreBodyClassLabel(null, 25)).toBe('—')
+    expect(composeOreBodyClassLabel(20, null)).toBe('—')
   })
 
   it('classifies dip values into the four handbook ranges', () => {

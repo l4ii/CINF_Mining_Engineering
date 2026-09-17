@@ -56,6 +56,11 @@ function prepareStableUserDataPath() {
 
 prepareStableUserDataPath()
 
+const gotSingletonLock = app.requestSingleInstanceLock()
+if (!gotSingletonLock) {
+  app.quit()
+}
+
 /** 与 frontend/src/constants/appCopy.ts 中 APP_NAME_ZH / APP_TAGLINE_ZH 保持同步 */
 const APP_DISPLAY_NAME = 'CINF采矿工程计算软件'
 const APP_SPLASH_DISPLAY_NAME = 'CINF采矿工程计算软件'
@@ -234,6 +239,22 @@ if (process.platform === 'win32') {
 let mainWindow
 let backendProcess
 let splashWindow
+
+function focusMainWindowAtHome() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady()) createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  mainWindow.webContents.send('app:reset-home')
+}
+
+app.on('second-instance', () => {
+  focusMainWindowAtHome()
+})
+
 /** 主窗显示与闪屏关闭仅处理一次（app:ready 或 90s 兜底） */
 let appReadyHandled = false
 let appReadyFallbackTimer = null
@@ -1088,6 +1109,7 @@ ipcMain.handle('export:save-file', async (event, payload) => {
 
 // 应用准备就绪
 app.whenReady().then(async () => {
+  if (!gotSingletonLock) return
   const startupT0 = Date.now()
   const mark = (label) => console.log(`[启动] ${label}: +${Date.now() - startupT0}ms`)
   try {

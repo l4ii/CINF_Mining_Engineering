@@ -32,6 +32,7 @@ import {
   type MethodMetrics,
   type OreBody,
 } from "../../mining/project";
+import type { MiningMethodInput } from "../../mining/types";
 
 export interface CutAndFillGuidePageProps {
   darkMode?: boolean;
@@ -91,6 +92,15 @@ function metricsForMethod(methodName: string): MethodMetrics {
 
 function metricsEqual(left: MethodMetrics, right: MethodMetrics): boolean {
   return METRIC_KEYS.every((key) => left[key] === right[key]);
+}
+
+function calculationInputsEqual(
+  left: MiningMethodInput | null | undefined,
+  right: MiningMethodInput | null | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function newMethod(input: Partial<Omit<MethodCandidate, "id">> & { methodName: string }): MethodCandidate {
@@ -474,15 +484,19 @@ export default function CutAndFillGuidePage({
   );
 
   const handleActiveMetrics = useCallback(
-    (metrics: Record<string, { value: number | null; unit: string }>) => {
+    (metrics: Record<string, { value: number | null; unit: string }>, input?: MiningMethodInput) => {
       if (!activeCandidateId) return;
       const next = pickMetrics(metrics);
       updateBody((body) => {
         let changed = false;
         const candidates = body.candidates.map((method) => {
-          if (method.id !== activeCandidateId || metricsEqual(method, next)) return method;
+          if (method.id !== activeCandidateId) return method;
+          const nextInput = input ?? method.calculationInput;
+          if (metricsEqual(method, next) && calculationInputsEqual(method.calculationInput, nextInput)) {
+            return method;
+          }
           changed = true;
-          return { ...method, ...next, calculated: true };
+          return { ...method, ...next, calculated: true, calculationInput: nextInput ?? null };
         });
         return changed ? { ...body, candidates } : body;
       });
@@ -522,21 +536,13 @@ export default function CutAndFillGuidePage({
               ...method,
               methodName,
               calculated: false,
+              calculationInput: null,
               ...(methodName ? metricsForMethod(methodName) : EMPTY_METHOD_METRICS),
             }
           : method,
       ),
     }));
     if (methodName && draftMethodId === methodId) setDraftMethodId(null);
-  };
-
-  const assignRowName = (methodId: string, name: string) => {
-    updateBody((body) => ({
-      ...body,
-      candidates: body.candidates.map((method) =>
-        method.id === methodId ? { ...method, name } : method,
-      ),
-    }));
   };
 
   const adoptMethod = (methodId: string) => {
@@ -610,7 +616,7 @@ export default function CutAndFillGuidePage({
     updateBody((body) => ({ ...body, candidates: [...body.candidates, ...added] }));
     setAssistOpen(false);
     setStatus(
-      `已按 ${selectedThickness.label} × ${selectedDip.label} 回填 ${added.length} 个规范推荐方法。`,
+      `已按 ${selectedThickness.label} × ${selectedDip.label} 加入 ${added.length} 个建议方法，可继续增删或修改后比选。`,
     );
   };
 
@@ -669,6 +675,7 @@ export default function CutAndFillGuidePage({
             dipAngle: oreBody.dipAngle,
             trueThickness: oreBody.thickness,
           }}
+          savedInput={activeMethod.calculationInput}
           embedded
           onBack={returnToProject}
           darkMode={darkMode}
@@ -701,7 +708,7 @@ export default function CutAndFillGuidePage({
           <p className={`mt-3 text-left text-base leading-7 ${muted}`}>
             {isEn
               ? `${oreBodyDisplayName(oreBody, oreBodyIndex)}: compare candidate mining methods for this ore body, then adopt one. When finished, return to occurrence.`
-              : `针对「${oreBodyDisplayName(oreBody, oreBodyIndex)}」开展采矿方法方案比选。可新建多个方案，也可按矿体产状条件加入规范推荐方法；计算后选定一个采用方法，该矿体即完成比选，并返回产状分布。`}
+              : `针对「${oreBodyDisplayName(oreBody, oreBodyIndex)}」开展采矿方法方案比选。手册所列方法共用同一套采切计算模板，差别在参数取值。可新建方法，也可按矿体产状查看建议方法；计算后选定一个采用方法，该矿体即完成比选，并返回产状分布。`}
           </p>
         </div>
       </header>
@@ -731,7 +738,7 @@ export default function CutAndFillGuidePage({
               onClick={openAssist}
               className={`text-base font-medium hover:underline ${darkMode ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-800"}`}
             >
-              按矿体条件选择
+              按矿体条件推荐
             </button>
             <button
               type="button"
@@ -753,7 +760,6 @@ export default function CutAndFillGuidePage({
           >
             <colgroup>
               <col className="w-10" />
-              <col className="w-48" />
               <col
                 style={{
                   width: `calc(${METHOD_COLUMN_CHARS}em + 2.5rem)`,
@@ -778,12 +784,6 @@ export default function CutAndFillGuidePage({
                   className={`border-b px-1 py-2 text-center text-sm font-semibold ${border}`}
                 >
                   编号
-                </th>
-                <th
-                  scope="col"
-                  className={`border-b px-1 py-2 text-center text-sm font-semibold ${border}`}
-                >
-                  名称
                 </th>
                 <th
                   scope="col"
@@ -820,8 +820,8 @@ export default function CutAndFillGuidePage({
             <tbody>
               {methods.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className={`px-3 py-7 text-center ${muted}`}>
-                    尚未建立方法。可新建方法指定采矿方法，或按矿体条件选择批量加入。选定其中一个作为采用方法后，该矿体完成。
+                  <td colSpan={12} className={`px-3 py-7 text-center ${muted}`}>
+                    尚未建立方法。可新建方法指定采矿方法，或按产状查看建议方法后加入。选定其中一个作为采用方法后，该矿体完成。
                   </td>
                 </tr>
               ) : (
@@ -829,17 +829,6 @@ export default function CutAndFillGuidePage({
                   <tr key={method.id} className={`border-t ${border}`}>
                     <td className="px-1 py-2 text-center tabular-nums">
                       {index + 1}
-                    </td>
-                    <td className="px-1 py-2 text-center">
-                      <input
-                        value={method.name}
-                        onChange={(event) =>
-                          assignRowName(method.id, event.target.value)
-                        }
-                        aria-label={`名称 ${index + 1}`}
-                        placeholder="请输入名称"
-                        className={`h-9 w-full rounded-md border px-2.5 text-center text-base outline-none focus:border-blue-500 ${inputSurface}`}
-                      />
                     </td>
                     <td className="px-1 py-2 text-center">
                       <MethodCombobox
@@ -953,7 +942,7 @@ export default function CutAndFillGuidePage({
 
       {assistOpen ? (
         <AppDialog
-          title="按矿体条件选择采矿方法"
+          title="按矿体产状推荐采矿方法"
           darkMode={darkMode}
           size="wide"
           testId="method-assist-dialog"
@@ -961,7 +950,7 @@ export default function CutAndFillGuidePage({
         >
           <div className="flex min-h-0 flex-1 flex-col gap-2 pt-2">
             <p className={`shrink-0 text-sm leading-5 ${muted}`}>
-              本选择依据《采矿设计手册》（1987 年）按矿体真厚度与倾角划分的适用区间，给出相应产状条件下的采矿方法，供方案初选和技术经济比较。
+              依据《采矿设计手册》（1987 年）按矿体真厚度与倾角划分的适用区间，列出可供比选的建议方法。下列结果仅供参考，不替代设计人员最终选定。
             </p>
             <section
               className={`shrink-0 rounded-lg border p-2.5 text-left ${surface}`}
@@ -974,7 +963,7 @@ export default function CutAndFillGuidePage({
                 <li>厚度：控制采幅、分层（或分段）高度及采准、切割工程布置。</li>
                 <li>倾角：制约矿石运搬方式、矿柱与围岩稳定以及充填体受力。</li>
                 <li>
-                  说明：手册给出的是产状条件下的初选范围，最终方案尚需结合矿岩稳固性、地压显现、装备能力和安全条件复核。
+                  说明：手册给出的是产状条件下的建议范围，最终方案尚需结合矿岩稳固性、地压显现、装备能力和安全条件复核。
                 </li>
               </ul>
             </section>
@@ -1068,7 +1057,7 @@ export default function CutAndFillGuidePage({
               <div
                 className={`shrink-0 border-b px-3 py-1.5 text-left text-sm font-semibold ${tableSubheader} ${darkMode ? "border-gray-700" : "border-gray-200"}`}
               >
-                规范推荐方法表
+                建议方法表
               </div>
               <HandbookMethodTable
                 darkMode={darkMode}
@@ -1081,7 +1070,7 @@ export default function CutAndFillGuidePage({
               className={`shrink-0 rounded-lg border px-3 py-1.5 text-left text-sm ${darkMode ? "border-gray-700 bg-gray-900/50" : "border-gray-200 bg-slate-50"}`}
               data-testid="standard-recommendations"
             >
-              <span className="font-semibold">本区间将加入本矿体的方法：</span>
+              <span className="font-semibold">本区间建议加入的方法：</span>
               <span>
                 {assistRecommendations.length > 0
                   ? assistRecommendations.join("、")

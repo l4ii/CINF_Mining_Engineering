@@ -31,7 +31,7 @@ describe('app dialog palette', () => {
 
   it('keeps wide dialogs on the same chrome', () => {
     render(
-      <AppDialog title="按矿体条件选择采矿方法" darkMode={false} onClose={() => undefined} size="wide" testId="method-assist-dialog">
+      <AppDialog title="按矿体产状推荐采矿方法" darkMode={false} onClose={() => undefined} size="wide" testId="method-assist-dialog">
         <p>内容</p>
       </AppDialog>,
     )

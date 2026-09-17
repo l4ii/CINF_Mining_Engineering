@@ -2,7 +2,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -29,10 +31,17 @@ type AssistantContextValue = {
 
 const AssistantContext = createContext<AssistantContextValue | null>(null)
 
-export function AssistantProvider({ children }: { children: ReactNode }) {
+export function AssistantProvider({
+  children,
+  pageKey,
+}: {
+  children: ReactNode
+  pageKey?: string
+}) {
   const [assistantDockOpen, setAssistantDockOpen] = useState(false)
   const [assistantDismissed, setAssistantDismissed] = useState(readAssistantDismissed)
   const [pendingAssistantPrompt, setPendingAssistantPrompt] = useState<string | null>(null)
+  const lastPageKeyRef = useRef(pageKey)
 
   const dismissAssistant = useCallback(() => {
     setAssistantDismissed(true)
@@ -43,6 +52,22 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, [])
+
+  const restoreAssistant = useCallback(() => {
+    setAssistantDismissed(false)
+    setAssistantDockOpen(false)
+    try {
+      sessionStorage.removeItem(ASSISTANT_DISMISSED_KEY)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (pageKey === lastPageKeyRef.current) return
+    lastPageKeyRef.current = pageKey
+    restoreAssistant()
+  }, [pageKey, restoreAssistant])
 
   const askAssistant = useCallback((prompt: string) => {
     const text = prompt.trim()
